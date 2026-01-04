@@ -1,14 +1,9 @@
 name: 🤖 Telegram Auto-Post Bot
 
 on:
-  # Run on schedule (every 2 hours)
   schedule:
     - cron: '0 */2 * * *'  # كل ساعتين
-  
-  # Allow manual trigger
   workflow_dispatch:
-  
-  # Run on push to main (for testing)
   push:
     branches: [ main ]
     paths:
@@ -18,16 +13,16 @@ on:
 jobs:
   post-to-telegram:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -36,7 +31,13 @@ jobs:
           else
             pip install requests urllib3 telethon cryptg
           fi
-      
+
+      - name: 🔑 Restore Telegram user session
+        run: |
+          echo "$USER_SESSION_BASE64" | base64 --decode > user_session.session
+        env:
+          USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
+
       - name: 📝 List files (debug)
         run: |
           echo "Current directory:"
@@ -47,19 +48,16 @@ jobs:
           echo ""
           echo "Python version:"
           python --version
-      
+
       - name: 🤖 Run Telegram Bot
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TARGET_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
           SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
           POSTS_LIMIT: "10"
         run: |
           python bot_advanced.py
-      
+
       - name: 📊 Upload logs (if failed)
         if: failure()
         uses: actions/upload-artifact@v4
