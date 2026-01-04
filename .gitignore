@@ -14,10 +14,16 @@ dist/
 # Logs
 *.log
 logs/
+bot.log
 
 # Environment variables
 .env
 .env.local
+
+# Telethon session files
+*.session
+*.session-journal
+bot_session.session
 
 # IDE
 .vscode/
@@ -29,6 +35,7 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Secrets (never commit these!)
+# Secrets (never commit!)
 config.json
 secrets.json
+credentials.json
