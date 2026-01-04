@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CONFIGURATION ======
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")  # Optional if using bot token
+BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")  # optional
 TARGET_CHANNEL = os.getenv("TELEGRAM_CHANNEL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 API_ID = os.getenv("TELEGRAM_API_ID")
@@ -50,7 +50,6 @@ if not all([TARGET_CHANNEL, OPENAI_API_KEY, API_ID, API_HASH, USER_SESSION_BASE6
 
 if not SOURCE_CHANNELS:
     logger.error("❌ Missing: SOURCE_CHANNELS")
-    logger.error("Add channel usernames separated by comma (e.g., TechNewsAR,AINews)")
     sys.exit(1)
 
 # ====== DECODE USER SESSION ======
@@ -137,18 +136,12 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
 
 # ====== TELEGRAM SENDER ======
 def send_to_channel(message: str, max_retries: int = 3) -> bool:
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    # إذا كنت تستخدم User session، BOT_TOKEN غير مستخدم
     for attempt in range(1, max_retries + 1):
         try:
-            response = requests.post(url, json={
-                "chat_id": TARGET_CHANNEL,
-                "text": message,
-                "parse_mode": "Markdown",
-                "disable_web_page_preview": False
-            }, timeout=15)
-            if response.status_code == 200:
-                logger.info("✅ Message published successfully!")
-                return True
+            client.loop.run_until_complete(client.send_message(TARGET_CHANNEL, message))
+            logger.info("✅ Message published successfully!")
+            return True
         except Exception as e:
             logger.error(f"❌ Unexpected error: {str(e)}")
         if attempt < max_retries:
@@ -165,10 +158,12 @@ async def main():
     raw_content = await get_content_from_sources()
     if not raw_content:
         logger.error("❌ No content available. Exiting.")
+        await client.disconnect()
         return False
     rewritten_content = await ai_rewrite_content(raw_content)
     if not rewritten_content:
         logger.error("❌ AI processing failed. Exiting.")
+        await client.disconnect()
         return False
     final_message = rewritten_content + f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
     send_to_channel(final_message)
