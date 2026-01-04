@@ -57,7 +57,7 @@ if not SOURCE_CHANNELS:
     sys.exit(1)
 
 # ====== TELETHON CLIENT ======
-client = TelegramClient('bot_session', int(API_ID), API_HASH)
+client = TelegramClient('user_session', int(API_ID), API_HASH)
 
 # ====== FETCH FROM TELEGRAM ======
 async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Message]:
@@ -217,9 +217,9 @@ async def main():
     logger.info("=" * 70)
     
     try:
-        # Step 1: Connect to Telegram
+        # Step 1: Connect to Telegram (User session)
         logger.info("🔌 Connecting to Telegram...")
-        await client.start(bot_token=BOT_TOKEN)
+        await client.start()   # ✅ هنا فقط start بدون bot_token
         logger.info("✅ Connected successfully")
         
         # Step 2: Fetch content from source channels
