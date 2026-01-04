@@ -13,8 +13,10 @@ on:
 jobs:
   post-to-telegram:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
@@ -26,13 +28,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests telethon cryptg
 
-      - name: 🔑 Restore Telegram session
+      - name: 🔑 Restore Telegram user session
         run: |
           echo "$USER_SESSION_BASE64" | base64 --decode > user_session.session
+          echo "📝 Listing files after decoding session:"
+          ls -la
         env:
           USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
 
-      - name: 🤖 Run Bot
+      - name: 📝 Debug Python environment
+        run: |
+          python --version
+          pip list
+
+      - name: 🤖 Run Telegram Bot
         env:
           USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
@@ -43,12 +52,11 @@ jobs:
           POSTS_LIMIT: "10"
         run: python bot_advanced.py
 
-      - name: 📊 Upload logs
+      - name: 📊 Upload logs if failed
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: bot-logs-${{ github.run_number }}
-          path: |
-            bot.log
+          path: bot.log
           if-no-files-found: ignore
           retention-days: 7
