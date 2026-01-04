@@ -3,6 +3,7 @@
 """
 🤖 Telegram Content Aggregator Bot - Advanced Version
 Fetches content from Telegram channels and reposts with AI enhancement
+Supports images, videos, and documents from source channels
 Enhanced logging for debugging GitHub Actions publishing issues
 """
 
@@ -41,11 +42,11 @@ POSTS_LIMIT = int(os.getenv("POSTS_LIMIT", "10"))
 
 # ====== VALIDATION ======
 if not all([TARGET_CHANNEL, OPENAI_API_KEY, API_ID, API_HASH, USER_SESSION_BASE64]):
-    logger.error("❌ Missing one of the required secrets: USER_SESSION_BASE64, TELEGRAM_CHANNEL, OPENAI_API_KEY, TELEGRAM_API_ID, TELEGRAM_API_HASH")
+    logger.error("❌ Missing one of the required secrets")
     sys.exit(1)
 
 if not SOURCE_CHANNELS:
-    logger.error("❌ Missing: SOURCE_CHANNELS")
+    logger.error("❌ SOURCE_CHANNELS not set")
     sys.exit(1)
 
 # ====== DECODE USER SESSION ======
@@ -62,31 +63,25 @@ async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Mes
     try:
         logger.info(f"📥 Fetching from @{channel_username}...")
         async for message in client.iter_messages(channel_username, limit=limit):
-            if message.text and len(message.text) > 50:
+            # احفظ كل ما يحتوي نص >50 أو أي وسائط (صورة، فيديو، مستند)
+            if (message.text and len(message.text) > 50) or message.photo or message.video or message.document:
                 messages.append(message)
-        if messages:
-            logger.info(f"✅ Fetched {len(messages)} posts from @{channel_username}")
-            for m in messages:
-                snippet = m.text[:50].replace("\n", " ")
-                logger.info(f"- @{m.chat.username or 'unknown'}: {snippet}... ({len(m.text)} chars)")
-        else:
-            logger.warning(f"⚠️ No posts fetched from @{channel_username}")
+        logger.info(f"✅ Fetched {len(messages)} posts from @{channel_username}")
     except Exception as e:
         logger.error(f"❌ Error fetching @{channel_username}: {str(e)}")
     return messages
 
-async def get_content_from_sources() -> Optional[str]:
+async def get_content_from_sources() -> Optional[Message]:
     all_messages = []
     for channel in SOURCE_CHANNELS:
         msgs = await fetch_recent_posts(channel, POSTS_LIMIT)
         all_messages.extend(msgs)
-        logger.info(f"📊 Total messages collected so far: {len(all_messages)}")
     if not all_messages:
-        logger.warning("⚠️ No content fetched from any source channel")
+        logger.warning("⚠️ No content fetched")
         return None
     selected = random.choice(all_messages)
-    logger.info(f"✅ Selected post from @{selected.chat.username or 'unknown'} ({len(selected.text)} chars)")
-    return selected.text
+    logger.info(f"✅ Selected post from @{selected.chat.username or 'unknown'}")
+    return selected
 
 # ====== AI PROCESSING ======
 async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
@@ -137,9 +132,13 @@ async def test_channel_access():
         logger.error(f"❌ Cannot send to {TARGET_CHANNEL}: {str(e)}")
         return False
 
-async def send_to_channel(message: str) -> bool:
+async def send_to_channel(message: str, media_path: Optional[str] = None) -> bool:
     try:
-        await client.send_message(TARGET_CHANNEL, message)
+        if media_path:
+            await client.send_file(TARGET_CHANNEL, media_path, caption=message)
+            os.remove(media_path)
+        else:
+            await client.send_message(TARGET_CHANNEL, message)
         logger.info("✅ Message published successfully!")
         return True
     except Exception as e:
@@ -150,34 +149,36 @@ async def send_to_channel(message: str) -> bool:
 async def main():
     logger.info("="*70)
     logger.info("🚀 Telegram Content Aggregator Bot - Debug Mode")
-    logger.info(f"🔹 Environment check: TARGET_CHANNEL={TARGET_CHANNEL}, SOURCE_CHANNELS={SOURCE_CHANNELS}, API_ID={'SET' if API_ID else 'NOT SET'}")
-    
+    logger.info(f"🔹 Environment check: TARGET_CHANNEL={TARGET_CHANNEL}, SOURCE_CHANNELS={SOURCE_CHANNELS}")
+
     await client.start()
     logger.info("✅ Connected successfully")
 
-    # تحقق من إمكانية النشر
     if not await test_channel_access():
         logger.error("❌ Cannot post to target channel. Exiting.")
         await client.disconnect()
         return False
 
-    # جلب المحتوى
-    raw_content = await get_content_from_sources()
-    if not raw_content:
+    post = await get_content_from_sources()
+    if not post:
         logger.error("❌ No content fetched. Exiting.")
         await client.disconnect()
         return False
 
-    # إعادة الصياغة
-    rewritten = await ai_rewrite_content(raw_content)
+    text = post.text if post.text else ""
+    rewritten = await ai_rewrite_content(text)
     if not rewritten:
         logger.error("❌ AI processing failed. Exiting.")
         await client.disconnect()
         return False
 
-    # إرسال الرسالة النهائية
+    media_path = None
+    if post.photo or post.video or post.document:
+        media_path = await post.download_media()
+        logger.info(f"📦 Downloaded media to {media_path}")
+
     final_message = rewritten + f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
-    success = await send_to_channel(final_message)
+    success = await send_to_channel(final_message, media_path)
     if not success:
         logger.error("❌ Failed to send final message!")
 
