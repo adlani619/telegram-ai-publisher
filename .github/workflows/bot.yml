@@ -11,6 +11,9 @@ on:
   # Run on push to main (for testing)
   push:
     branches: [ main ]
+    paths:
+      - 'bot_advanced.py'
+      - '.github/workflows/*.yml'
 
 jobs:
   post-to-telegram:
@@ -31,23 +34,31 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            pip install requests urllib3
+            pip install requests urllib3 telethon cryptg
           fi
       
       - name: 📝 List files (debug)
         run: |
           echo "Current directory:"
           pwd
+          echo ""
           echo "Files in directory:"
           ls -la
+          echo ""
+          echo "Python version:"
+          python --version
       
       - name: 🤖 Run Telegram Bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
+          POSTS_LIMIT: "10"
         run: |
-          python bot.py
+          python bot_advanced.py
       
       - name: 📊 Upload logs (if failed)
         if: failure()
