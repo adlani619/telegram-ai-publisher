@@ -125,11 +125,11 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
 # ====== TELEGRAM SENDER ======
 async def test_channel_access():
     try:
-        msg = await client.send_message(TARGET_CHANNEL, "🟢 اختبار صلاحية النشر")
-        logger.info(f"✅ Test message sent to {TARGET_CHANNEL}")
+        entity = await client.get_entity(TARGET_CHANNEL)
+        logger.info(f"✅ Target channel '{TARGET_CHANNEL}' is accessible")
         return True
     except Exception as e:
-        logger.error(f"❌ Cannot send to {TARGET_CHANNEL}: {str(e)}")
+        logger.error(f"❌ Cannot access {TARGET_CHANNEL}: {str(e)}")
         return False
 
 async def send_to_channel(message: str, media_path: Optional[str] = None) -> bool:
