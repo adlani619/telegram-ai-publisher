@@ -70,7 +70,7 @@ def ai_translate_and_summarize(text: str, max_retries: int = 3) -> Optional[str]
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "gpt-4",
+                    "model": "gpt-4o-mini",
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.4,
                     "max_tokens": 500
