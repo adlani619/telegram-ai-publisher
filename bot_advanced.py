@@ -66,6 +66,9 @@ async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Mes
                 messages.append(message)
         if messages:
             logger.info(f"✅ Fetched {len(messages)} posts from @{channel_username}")
+            for m in messages:
+                snippet = m.text[:50].replace("\n", " ")
+                logger.info(f"- @{m.chat.username or 'unknown'}: {snippet}... ({len(m.text)} chars)")
         else:
             logger.warning(f"⚠️ No posts fetched from @{channel_username}")
     except Exception as e:
@@ -97,7 +100,7 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
 5. اكتب عنوان قوي وجذاب مع إيموجي مناسب
 6. استخدم أسلوب صحفي احترافي
 7. اجعل الملخص في 3-5 أسطر فقط
-8. أضف قيمة للقارئ (تحليل بسيط، سياق، أهمية الخبر)
+8. أضف قيمة للقارئ
 
 المحتوى الأصلي:
 {text}
@@ -112,8 +115,9 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
                 timeout=30
             )
             if response.status_code == 200:
-                logger.info("✅ AI rewriting successful")
-                return response.json()['choices'][0]['message']['content'].strip()
+                result = response.json()['choices'][0]['message']['content'].strip()
+                logger.info(f"✅ AI output preview (first 200 chars): {result[:200]}...")
+                return result
             else:
                 logger.warning(f"⚠️ OpenAI API error: {response.status_code} - {response.text}")
         except Exception as e:
@@ -146,28 +150,36 @@ async def send_to_channel(message: str) -> bool:
 async def main():
     logger.info("="*70)
     logger.info("🚀 Telegram Content Aggregator Bot - Debug Mode")
+    logger.info(f"🔹 Environment check: TARGET_CHANNEL={TARGET_CHANNEL}, SOURCE_CHANNELS={SOURCE_CHANNELS}, API_ID={'SET' if API_ID else 'NOT SET'}")
+    
     await client.start()
     logger.info("✅ Connected successfully")
 
+    # تحقق من إمكانية النشر
     if not await test_channel_access():
         logger.error("❌ Cannot post to target channel. Exiting.")
         await client.disconnect()
         return False
 
+    # جلب المحتوى
     raw_content = await get_content_from_sources()
     if not raw_content:
         logger.error("❌ No content fetched. Exiting.")
         await client.disconnect()
         return False
 
+    # إعادة الصياغة
     rewritten = await ai_rewrite_content(raw_content)
     if not rewritten:
         logger.error("❌ AI processing failed. Exiting.")
         await client.disconnect()
         return False
 
+    # إرسال الرسالة النهائية
     final_message = rewritten + f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
-    await send_to_channel(final_message)
+    success = await send_to_channel(final_message)
+    if not success:
+        logger.error("❌ Failed to send final message!")
 
     await client.disconnect()
     logger.info("✅ Finished all tasks")
