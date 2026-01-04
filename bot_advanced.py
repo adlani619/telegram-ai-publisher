@@ -99,7 +99,7 @@ async def get_content_from_sources() -> Optional[str]:
     return selected.text
 
 # ====== AI PROCESSING ======
-def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
+async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
     """إعادة صياغة المحتوى بالذكاء الاصطناعي"""
     
     prompt = f"""
@@ -235,7 +235,7 @@ async def main():
         
         # Step 3: Process with AI
         logger.info("🤖 Processing content with AI...")
-        rewritten_content = ai_rewrite_content(raw_content)
+        rewritten_content = await ai_rewrite_content(raw_content)
         
         if not rewritten_content:
             logger.error("❌ AI processing failed. Exiting.")
