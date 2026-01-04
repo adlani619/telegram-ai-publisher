@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🤖 Telegram Content Aggregator Bot - User Session (Option B)
+🤖 Telegram Content Aggregator Bot - Advanced Version
 Fetches content from Telegram channels and reposts with AI enhancement
+Supports USER_SESSION_BASE64 for GitHub Actions
 """
 
 import os
@@ -11,6 +12,7 @@ import asyncio
 import logging
 import requests
 import random
+import base64
 from datetime import datetime
 from typing import Optional, List
 from telethon import TelegramClient
@@ -28,10 +30,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CONFIGURATION ======
-TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")  # اسم القناة أو @username
+TARGET_CHANNEL = os.getenv("TELEGRAM_CHANNEL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 API_ID = os.getenv("TELEGRAM_API_ID")
 API_HASH = os.getenv("TELEGRAM_API_HASH")
+USER_SESSION_BASE64 = os.getenv("USER_SESSION_BASE64")
 
 # القنوات المصدر
 SOURCE_CHANNELS = os.getenv("SOURCE_CHANNELS", "").split(",")
@@ -41,13 +44,8 @@ SOURCE_CHANNELS = [ch.strip() for ch in SOURCE_CHANNELS if ch.strip()]
 POSTS_LIMIT = int(os.getenv("POSTS_LIMIT", "10"))
 
 # ====== VALIDATION ======
-if not all([TARGET_CHANNEL, OPENAI_API_KEY]):
-    logger.error("❌ Missing: TARGET_CHANNEL, OPENAI_API_KEY")
-    sys.exit(1)
-
-if not all([API_ID, API_HASH]):
-    logger.error("❌ Missing: TELEGRAM_API_ID, TELEGRAM_API_HASH")
-    logger.error("Get them from: https://my.telegram.org/apps")
+if not all([USER_SESSION_BASE64, TARGET_CHANNEL, OPENAI_API_KEY, API_ID, API_HASH]):
+    logger.error("❌ Missing one of the required secrets: USER_SESSION_BASE64, TELEGRAM_CHANNEL, OPENAI_API_KEY, TELEGRAM_API_ID, TELEGRAM_API_HASH")
     sys.exit(1)
 
 if not SOURCE_CHANNELS:
@@ -55,17 +53,26 @@ if not SOURCE_CHANNELS:
     logger.error("Add channel usernames separated by comma (e.g., TechNewsAR,AINews)")
     sys.exit(1)
 
+# ====== LOAD USER SESSION ======
+try:
+    session_bytes = base64.b64decode(USER_SESSION_BASE64)
+    with open("user_session.session", "wb") as f:
+        f.write(session_bytes)
+    logger.info("✅ User session loaded from Base64 secret")
+except Exception as e:
+    logger.error(f"❌ Failed to decode USER_SESSION_BASE64: {str(e)}")
+    sys.exit(1)
+
 # ====== TELETHON CLIENT ======
 client = TelegramClient('user_session', int(API_ID), API_HASH)
 
 # ====== FETCH FROM TELEGRAM ======
 async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Message]:
-    """جلب آخر منشورات من قناة تيليغرام"""
     try:
         logger.info(f"📥 Fetching from @{channel_username}...")
         messages = []
         async for message in client.iter_messages(channel_username, limit=limit):
-            if message.text and len(message.text) > 50:  # فقط المنشورات النصية الطويلة
+            if message.text and len(message.text) > 50:
                 messages.append(message)
         logger.info(f"✅ Fetched {len(messages)} posts from @{channel_username}")
         return messages
@@ -74,7 +81,6 @@ async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Mes
         return []
 
 async def get_content_from_sources() -> Optional[str]:
-    """جلب محتوى من جميع القنوات المصدر"""
     all_messages = []
     for channel in SOURCE_CHANNELS:
         messages = await fetch_recent_posts(channel, POSTS_LIMIT)
@@ -90,10 +96,8 @@ async def get_content_from_sources() -> Optional[str]:
 
 # ====== AI PROCESSING ======
 async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
-    """إعادة صياغة المحتوى بالذكاء الاصطناعي"""
     prompt = f"""
 أنت محرر محتوى احترافي وخبير في إعادة الصياغة. مهمتك:
-
 1. اقرأ المحتوى التالي بعناية
 2. أعد صياغته بأسلوب جذاب ومختلف **تماماً** عن الأصل
 3. إذا كان النص بالإنجليزية، ترجمه إلى العربية
@@ -141,46 +145,94 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
         except Exception as e:
             logger.error(f"❌ Unexpected error: {str(e)}")
         if attempt < max_retries:
-            wait_time = attempt * 2
-            logger.info(f"⏳ Waiting {wait_time}s before retry...")
-            await asyncio.sleep(wait_time)
+            await asyncio.sleep(attempt * 2)
     logger.error("❌ AI processing failed after all retries")
     return None
 
 # ====== TELEGRAM SENDER ======
-async def send_to_channel(message: str) -> bool:
-    """نشر رسالة على قناة تيليغرام باستخدام session المستخدم"""
-    try:
-        await client.send_message(TARGET_CHANNEL, message)
-        logger.info("✅ Message published successfully!")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error sending message: {str(e)}")
-        return False
+def send_to_channel(message: str, max_retries: int = 3) -> bool:
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"📤 Publishing to channel (attempt {attempt}/{max_retries})...")
+            response = requests.post(
+                url,
+                json={
+                    "chat_id": TARGET_CHANNEL,
+                    "text": message,
+                    "parse_mode": "Markdown",
+                    "disable_web_page_preview": False
+                },
+                timeout=15
+            )
+            if response.status_code == 200:
+                logger.info("✅ Message published successfully!")
+                return True
+            else:
+                error_msg = response.json().get('description', 'Unknown error')
+                logger.warning(f"⚠️ Telegram API error: {error_msg}")
+        except requests.exceptions.Timeout:
+            logger.warning(f"⏱️ Request timeout (attempt {attempt}/{max_retries})")
+        except Exception as e:
+            logger.error(f"❌ Unexpected error: {str(e)}")
+        if attempt < max_retries:
+            import time
+            time.sleep(attempt * 2)
+    logger.error("❌ Failed to publish message after all retries")
+    return False
 
 # ====== MAIN EXECUTION ======
 async def main():
-    """Main execution flow"""
     logger.info("=" * 70)
-    logger.info("🚀 Telegram Content Aggregator Bot - User Session Mode")
+    logger.info("🚀 Telegram Content Aggregator Bot - Advanced Mode")
     logger.info(f"📅 Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     logger.info(f"📢 Target channel: {TARGET_CHANNEL}")
     logger.info(f"📡 Source channels: {', '.join(SOURCE_CHANNELS)}")
     logger.info(f"📊 Posts limit per channel: {POSTS_LIMIT}")
     logger.info("=" * 70)
-    
     try:
-        logger.info("🔌 Connecting to Telegram (User session)...")
-        await client.start()
+        logger.info("🔌 Connecting to Telegram (user session)...")
+        await client.start()  # ✅ استخدام session المستخدم
         logger.info("✅ Connected successfully")
-        
-        logger.info("📥 Fetching content from source channels...")
         raw_content = await get_content_from_sources()
         if not raw_content:
             logger.error("❌ No content available. Exiting.")
             return False
-        
-        logger.info(f"✅ Content fetched successfully")
-        logger.info(f"📄 Preview (first 200 chars): {raw_content[:200]}...")
-        
-        logger.info("🤖
+        rewritten_content = await ai_rewrite_content(raw_content)
+        if not rewritten_content:
+            logger.error("❌ AI processing failed. Exiting.")
+            return False
+        footer = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+        final_message = rewritten_content + footer
+        logger.info("📝 Final message prepared:")
+        logger.info(final_message)
+        success = send_to_channel(final_message)
+        if success:
+            logger.info("✨ Mission accomplished! Content published successfully.")
+            return True
+        else:
+            logger.error("💔 Mission failed. Publishing unsuccessful.")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+    finally:
+        logger.info("🔌 Disconnecting from Telegram...")
+        await client.disconnect()
+        logger.info("✅ Disconnected")
+
+# ====== ENTRY POINT ======
+if __name__ == "__main__":
+    try:
+        result = asyncio.run(main())
+        sys.exit(0 if result else 1)
+    except KeyboardInterrupt:
+        logger.info("\n⚠️ Bot stopped by user (Ctrl+C)")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        sys.exit(1)
