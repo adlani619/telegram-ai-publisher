@@ -186,54 +186,81 @@ def send_to_facebook(message: str, media_path: Optional[str] = None) -> bool:
     try:
         logger.info("📤 Publishing to Facebook...")
         
-        url = f"https://graph.facebook.com/v18.0/{FB_PAGE_ID}"
+        # استخدام v21.0 (الأحدث)
+        base_url = f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}"
         
-        if media_path:
-            # نشر مع صورة/فيديو
-            if media_path.endswith(('.jpg', '.jpeg', '.png', '.gif')):
-                # صورة
-                endpoint = f"{url}/photos"
-                with open(media_path, 'rb') as f:
-                    files = {'source': f}
+        if media_path and os.path.exists(media_path):
+            # نشر مع صورة أو فيديو
+            file_ext = media_path.lower()
+            
+            if any(ext in file_ext for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                # نشر صورة
+                logger.info("📸 Posting photo to Facebook...")
+                endpoint = f"{base_url}/photos"
+                
+                with open(media_path, 'rb') as photo:
+                    files = {'source': photo}
                     data = {
-                        'caption': message,
-                        'access_token': FB_ACCESS_TOKEN
-                    }
-                    response = requests.post(endpoint, files=files, data=data, timeout=30)
-            elif media_path.endswith(('.mp4', '.mov', '.avi')):
-                # فيديو
-                endpoint = f"{url}/videos"
-                with open(media_path, 'rb') as f:
-                    files = {'source': f}
-                    data = {
-                        'description': message,
-                        'access_token': FB_ACCESS_TOKEN
+                        'message': message,  # استخدم 'message' بدلاً من 'caption'
+                        'access_token': FB_ACCESS_TOKEN,
+                        'published': 'true'
                     }
                     response = requests.post(endpoint, files=files, data=data, timeout=60)
+                    
+            elif any(ext in file_ext for ext in ['.mp4', '.mov', '.avi', '.mkv']):
+                # نشر فيديو
+                logger.info("🎥 Posting video to Facebook...")
+                endpoint = f"{base_url}/videos"
+                
+                with open(media_path, 'rb') as video:
+                    files = {'source': video}
+                    data = {
+                        'description': message,
+                        'access_token': FB_ACCESS_TOKEN,
+                        'published': 'true'
+                    }
+                    response = requests.post(endpoint, files=files, data=data, timeout=120)
             else:
                 # نوع ملف غير مدعوم، انشر نص فقط
+                logger.warning(f"⚠️ Unsupported media type: {file_ext}, posting text only")
                 return send_to_facebook(message, None)
         else:
-            # نشر نص فقط
-            endpoint = f"{url}/feed"
+            # نشر نص فقط (بدون وسائط)
+            logger.info("📝 Posting text to Facebook...")
+            endpoint = f"{base_url}/feed"
+            
             data = {
                 'message': message,
-                'access_token': FB_ACCESS_TOKEN
+                'access_token': FB_ACCESS_TOKEN,
+                'published': 'true'
             }
             response = requests.post(endpoint, data=data, timeout=30)
         
+        # معالجة الاستجابة
         if response.status_code == 200:
             result = response.json()
             post_id = result.get('id', result.get('post_id', 'unknown'))
             logger.info(f"✅ Facebook: Published successfully! Post ID: {post_id}")
+            logger.info(f"🔗 View at: https://facebook.com/{post_id}")
             return True
         else:
             logger.error(f"❌ Facebook API error: {response.status_code}")
             logger.error(f"Response: {response.text}")
+            
+            # محاولة النشر كنص فقط إذا فشل النشر مع الوسائط
+            if media_path:
+                logger.warning("⚠️ Retrying without media...")
+                return send_to_facebook(message, None)
+            
             return False
             
+    except FileNotFoundError:
+        logger.error(f"❌ Media file not found: {media_path}")
+        return send_to_facebook(message, None)
     except Exception as e:
         logger.error(f"❌ Facebook publishing failed: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 # ====== MAIN EXECUTION ======
