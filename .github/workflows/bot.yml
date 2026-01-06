@@ -1,4 +1,4 @@
-name: 🤖 Auto-Post Bot (Every 2 Hours)
+name: 🤖 Auto-Post Bot
 
 on:
   schedule:
@@ -50,10 +50,10 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
           
-          # Facebook - نشر كمسودة للمراجعة
+          # Facebook - نشر مباشر
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
-          FB_PUBLISH_AS_DRAFT: "true"
+          FB_PUBLISH_AS_DRAFT: "false"
           
           # OpenAI
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
