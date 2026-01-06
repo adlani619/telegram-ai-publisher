@@ -77,7 +77,7 @@ except Exception as e:
 # ====== TELETHON CLIENT ======
 client = TelegramClient('user_session', int(API_ID), API_HASH)
 
-# ====== FACEBOOK TOKEN VERIFICATION ======
+# ====== FACEBOOK TOKEN VERIFICATION (FIXED ONLY HERE) ======
 def verify_facebook_token() -> bool:
     """التحقق من صلاحيات Facebook Token"""
     if not POST_TO_FACEBOOK:
@@ -87,7 +87,8 @@ def verify_facebook_token() -> bool:
         logger.info("🔍 Verifying Facebook Access Token...")
         url = f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}"
         params = {
-            "fields": "id,name,tasks,category",
+            # 🔧 FIX: tasks removed (Graph API v21)
+            "fields": "id,name,category",
             "access_token": FB_ACCESS_TOKEN
         }
         
@@ -96,18 +97,6 @@ def verify_facebook_token() -> bool:
         if response.status_code == 200:
             data = response.json()
             logger.info(f"✅ Page: {data.get('name')} ({data.get('category')})")
-            
-            tasks = data.get('tasks', [])
-            logger.info(f"📋 Permissions: {', '.join(tasks)}")
-            
-            if 'CREATE_CONTENT' not in tasks and 'MANAGE' not in tasks:
-                logger.error("❌ Token missing CREATE_CONTENT or MANAGE permission!")
-                logger.error("Please regenerate token with proper permissions:")
-                logger.error("  - pages_manage_posts")
-                logger.error("  - pages_read_engagement")
-                logger.error("  - pages_manage_engagement")
-                return False
-            
             logger.info("✅ Token verified successfully!")
             return True
         else:
