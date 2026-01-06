@@ -1,11 +1,11 @@
-name: 🤖 Auto-Post Bot (Every 30 minutes)
+name: 🤖 Auto-Post Bot (Every 2 Hours)
 
 on:
   schedule:
-    # كل 30 دقيقة (48 مرة في اليوم)
-    - cron: '0,30 * * * *'
+    # كل ساعتين - 12 مرة يومياً
+    - cron: '0 */2 * * *'
     
-  workflow_dispatch:  # للتشغيل اليدوي
+  workflow_dispatch:
   
   push:
     branches: [ main ]
@@ -36,30 +36,29 @@ jobs:
       - name: 🔑 Restore Telegram session
         run: |
           echo "$USER_SESSION_BASE64" | base64 --decode > user_session.session
-          echo "✅ Session restored successfully"
+          echo "✅ Session restored"
           ls -lh user_session.session
         env:
           USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
       
       - name: 🤖 Run Multi-Platform Bot
         env:
-          # Telegram Configuration
+          # Telegram
           USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
           TELEGRAM_CHANNEL: "NextGenTechOfficial"
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
           
-          # Facebook/Instagram Configuration
+          # Facebook - نشر مباشر
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
-          # true = مسودة للمراجعة | false = نشر مباشر
-          FB_PUBLISH_AS_DRAFT: "true"
+          FB_PUBLISH_AS_DRAFT: "false"
           
-          # OpenAI Configuration
+          # OpenAI
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           
-          # Bot Settings
+          # Settings
           POSTS_LIMIT: "15"
           POST_TO_TELEGRAM: "true"
           POST_TO_FACEBOOK: "true"
@@ -83,11 +82,11 @@ jobs:
         run: |
           echo "### 📊 Execution Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Time:** $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Run Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           if [ -f bot.log ]; then
             echo "- **Log Size:** $(wc -l < bot.log) lines" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Last 10 log lines:" >> $GITHUB_STEP_SUMMARY
+            echo "#### 📝 Last 10 log lines:" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             tail -n 10 bot.log >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
