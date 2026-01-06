@@ -1,8 +1,8 @@
-name: 🤖 Auto-Post Bot
+name: 🤖 Auto-Post Bot (Telegram Only)
 
 on:
   schedule:
-    # كل نصف ساعة - 48 مرة يومياً
+    # كل نصف ساعة (48 مرة يومياً)
     - cron: '*/30 * * * *'
     
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
       - '.github/workflows/*.yml'
 
 jobs:
-  post-to-platforms:
+  post-to-telegram:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     
@@ -41,34 +41,35 @@ jobs:
         env:
           USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
       
-      - name: 🤖 Run Multi-Platform Bot
+      - name: 🤖 Run Telegram Auto-Post Bot
         env:
-          # Telegram
+          # Telegram Configuration
           USER_SESSION_BASE64: ${{ secrets.USER_SESSION_BASE64 }}
           TELEGRAM_CHANNEL: "NextGenTechOfficial"
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
           
-          # Facebook - نشر مباشر
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
-          FB_PUBLISH_AS_DRAFT: "false"
-          
-          # OpenAI
+          # OpenAI Configuration
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           
           # Settings
           POSTS_LIMIT: "15"
-          POST_TO_TELEGRAM: "true"
-          POST_TO_FACEBOOK: "true"
           MIN_CONTENT_LENGTH: "100"
+          
+          # Facebook (معطل - يمكن تفعيله لاحقاً)
+          # FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          # FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
+          # FB_PUBLISH_AS_DRAFT: "false"
+          # POST_TO_FACEBOOK: "true"
         run: |
-          echo "🚀 Starting bot at $(date)"
+          echo "🚀 بدء البوت في: $(date)"
+          echo "📢 القناة المستهدفة: NextGenTechOfficial"
+          echo "🕐 التشغيل التلقائي: كل 30 دقيقة"
           python bot_advanced.py
-          echo "✅ Bot finished at $(date)"
+          echo "✅ انتهى البوت في: $(date)"
       
-      - name: 📊 Upload logs (on failure)
+      - name: 📊 Upload logs (عند الفشل)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -80,13 +81,15 @@ jobs:
       - name: 📈 Summary
         if: always()
         run: |
-          echo "### 📊 Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Time:** $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 ملخص التنفيذ" >> $GITHUB_STEP_SUMMARY
+          echo "- **الوقت:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "- **رقم التشغيل:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **المنصة:** تيليغرام فقط" >> $GITHUB_STEP_SUMMARY
+          echo "- **التكرار:** كل 30 دقيقة" >> $GITHUB_STEP_SUMMARY
           if [ -f bot.log ]; then
-            echo "- **Log Size:** $(wc -l < bot.log) lines" >> $GITHUB_STEP_SUMMARY
+            echo "- **حجم السجل:** $(wc -l < bot.log) سطر" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### 📝 Last 10 log lines:" >> $GITHUB_STEP_SUMMARY
+            echo "#### 📝 آخر 10 أسطر من السجل:" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             tail -n 10 bot.log >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
