@@ -40,7 +40,6 @@ SOURCE_CHANNELS = [ch.strip() for ch in SOURCE_CHANNELS if ch.strip()]
 # Facebook/Instagram
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
-# خيار جديد: true = مسودة، false = نشر مباشر
 FB_PUBLISH_AS_DRAFT = os.getenv("FB_PUBLISH_AS_DRAFT", "true").lower() == "true"
 
 # OpenAI
@@ -78,6 +77,48 @@ except Exception as e:
 # ====== TELETHON CLIENT ======
 client = TelegramClient('user_session', int(API_ID), API_HASH)
 
+# ====== FACEBOOK TOKEN VERIFICATION ======
+def verify_facebook_token() -> bool:
+    """التحقق من صلاحيات Facebook Token"""
+    if not POST_TO_FACEBOOK:
+        return True
+    
+    try:
+        logger.info("🔍 Verifying Facebook Access Token...")
+        url = f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}"
+        params = {
+            "fields": "id,name,tasks,category",
+            "access_token": FB_ACCESS_TOKEN
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(f"✅ Page: {data.get('name')} ({data.get('category')})")
+            
+            tasks = data.get('tasks', [])
+            logger.info(f"📋 Permissions: {', '.join(tasks)}")
+            
+            if 'CREATE_CONTENT' not in tasks and 'MANAGE' not in tasks:
+                logger.error("❌ Token missing CREATE_CONTENT or MANAGE permission!")
+                logger.error("Please regenerate token with proper permissions:")
+                logger.error("  - pages_manage_posts")
+                logger.error("  - pages_read_engagement")
+                logger.error("  - pages_manage_engagement")
+                return False
+            
+            logger.info("✅ Token verified successfully!")
+            return True
+        else:
+            logger.error(f"❌ Token verification failed: {response.status_code}")
+            logger.error(response.text[:500])
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Token verification error: {str(e)}")
+        return False
+
 # ====== FETCH FROM TELEGRAM ======
 async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Message]:
     """جلب المنشورات من قناة تيليغرام"""
@@ -85,7 +126,6 @@ async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Mes
     try:
         logger.info(f"📥 Fetching from @{channel_username}...")
         async for message in client.iter_messages(channel_username, limit=limit):
-            # تحسين: التحقق من طول المحتوى
             if message.text and len(message.text) >= MIN_CONTENT_LENGTH:
                 messages.append(message)
             elif (message.photo or message.video) and message.text:
@@ -106,7 +146,6 @@ async def get_content_from_sources() -> Optional[Message]:
         logger.warning("⚠️ No suitable content found from any source")
         return None
     
-    # اختيار عشوائي من المنشورات الجيدة
     selected = random.choice(all_messages)
     source = selected.chat.username or selected.chat.title or 'unknown'
     logger.info(f"✅ Selected quality post from @{source}")
@@ -114,19 +153,14 @@ async def get_content_from_sources() -> Optional[Message]:
 
 # ====== AI PROCESSING ======
 async def ai_rewrite_content(text: str, platform: str = "general", max_retries: int = 3) -> Optional[str]:
-    """
-    إعادة صياغة المحتوى بذكاء اصطناعي حسب المنصة
-    platform: 'telegram', 'facebook', 'general'
-    """
+    """إعادة صياغة المحتوى بذكاء اصطناعي"""
     
-    # تحسين: التأكد من وجود محتوى حقيقي
     if not text or len(text.strip()) < 50:
         logger.error("❌ Content too short or empty for AI processing")
         return None
     
     if platform == "facebook":
-        prompt = f"""
-أنت خبير تسويق محتوى على فيسبوك وإنستغرام. أعد صياغة المحتوى التالي بطريقة احترافية:
+        prompt = f"""أنت خبير تسويق محتوى على فيسبوك وإنستغرام. أعد صياغة المحتوى التالي بطريقة احترافية:
 
 متطلبات:
 ✅ عنوان جذاب مع إيموجي مناسب
@@ -141,11 +175,9 @@ async def ai_rewrite_content(text: str, platform: str = "general", max_retries: 
 المحتوى الأصلي:
 {text}
 
-أعد الصياغة الآن:
-"""
-    else:  # telegram or general
-        prompt = f"""
-أنت محرر محتوى احترافي على تيليغرام. أعد صياغة المحتوى التالي:
+أعد الصياغة الآن:"""
+    else:
+        prompt = f"""أنت محرر محتوى احترافي على تيليغرام. أعد صياغة المحتوى التالي:
 
 متطلبات:
 ✅ عنوان قوي مع إيموجي
@@ -159,8 +191,7 @@ async def ai_rewrite_content(text: str, platform: str = "general", max_retries: 
 المحتوى الأصلي:
 {text}
 
-أعد الصياغة الآن:
-"""
+أعد الصياغة الآن:"""
     
     for attempt in range(1, max_retries + 1):
         try:
@@ -174,7 +205,7 @@ async def ai_rewrite_content(text: str, platform: str = "general", max_retries: 
                 json={
                     "model": "gpt-4o-mini",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7,  # خفضنا قليلاً لنتائج أكثر اتساقاً
+                    "temperature": 0.7,
                     "max_tokens": 800
                 },
                 timeout=30
@@ -183,15 +214,7 @@ async def ai_rewrite_content(text: str, platform: str = "general", max_retries: 
             if response.status_code == 200:
                 result = response.json()['choices'][0]['message']['content'].strip()
                 
-                # تحسين: فلترة الردود السيئة
-                bad_phrases = [
-                    "بالطبع",
-                    "يُرجى تزويدي",
-                    "سأكون سعيد",
-                    "يرجى تقديم",
-                    "لا أستطيع",
-                    "عذراً"
-                ]
+                bad_phrases = ["بالطبع", "يُرجى تزويدي", "سأكون سعيد", "يرجى تقديم", "لا أستطيع", "عذراً"]
                 
                 if any(phrase in result[:100] for phrase in bad_phrases):
                     logger.warning(f"⚠️ AI returned generic response, retrying...")
@@ -208,7 +231,7 @@ async def ai_rewrite_content(text: str, platform: str = "general", max_retries: 
                 logger.info(f"✅ AI success! Preview: {result[:120]}...")
                 return result
             else:
-                logger.warning(f"⚠️ OpenAI API error: {response.status_code} - {response.text[:200]}")
+                logger.warning(f"⚠️ OpenAI API error: {response.status_code}")
                 
         except requests.exceptions.Timeout:
             logger.error(f"⏱️ Request timeout on attempt {attempt}")
@@ -244,98 +267,62 @@ async def send_to_telegram(message: str, media_path: Optional[str] = None) -> bo
 
 # ====== FACEBOOK/INSTAGRAM SENDER ======
 def send_to_facebook(message: str, media_path: Optional[str] = None) -> bool:
-    """
-    نشر على Facebook/Instagram
-    يدعم النشر المباشر أو كمسودة (Draft)
-    """
+    """نشر على Facebook/Instagram"""
     if not POST_TO_FACEBOOK:
         logger.info("⏭️ Facebook posting disabled")
         return True
     
     try:
-        # تحديد حالة النشر
         published_status = "false" if FB_PUBLISH_AS_DRAFT else "true"
-        status_text = "draft 📝" if FB_PUBLISH_AS_DRAFT else "live ✅"
+        status_text = "DRAFT 📝" if FB_PUBLISH_AS_DRAFT else "LIVE ✅"
         
         logger.info(f"📤 Publishing to Facebook as {status_text}...")
         
         base_url = f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}"
+        endpoint = f"{base_url}/feed"
         
-        if media_path and os.path.exists(media_path):
-            file_ext = media_path.lower()
-            
-            if any(ext in file_ext for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
-                # نشر صورة
-                logger.info(f"📸 Posting photo as {status_text}...")
-                endpoint = f"{base_url}/photos"
-                
-                with open(media_path, 'rb') as photo:
-                    files = {'source': photo}
-                    data = {
-                        'message': message,
-                        'access_token': FB_ACCESS_TOKEN,
-                        'published': published_status
-                    }
-                    response = requests.post(endpoint, files=files, data=data, timeout=60)
-                    
-            elif any(ext in file_ext for ext in ['.mp4', '.mov', '.avi', '.mkv']):
-                # نشر فيديو
-                logger.info(f"🎥 Posting video as {status_text}...")
-                endpoint = f"{base_url}/videos"
-                
-                with open(media_path, 'rb') as video:
-                    files = {'source': video}
-                    data = {
-                        'description': message,
-                        'access_token': FB_ACCESS_TOKEN,
-                        'published': published_status
-                    }
-                    response = requests.post(endpoint, files=files, data=data, timeout=120)
-            else:
-                logger.warning(f"⚠️ Unsupported media type: {file_ext}, posting text only")
-                return send_to_facebook(message, None)
-        else:
-            # نشر نص فقط
-            logger.info(f"📝 Posting text as {status_text}...")
-            endpoint = f"{base_url}/feed"
-            
-            data = {
-                'message': message,
-                'access_token': FB_ACCESS_TOKEN,
-                'published': published_status
-            }
-            response = requests.post(endpoint, data=data, timeout=30)
+        post_data = {
+            "message": message,
+            "access_token": FB_ACCESS_TOKEN,
+            "published": published_status
+        }
         
-        # معالجة الاستجابة
+        logger.info(f"📡 Endpoint: {endpoint}")
+        logger.info(f"📦 Status: published={published_status}")
+        
+        response = requests.post(endpoint, data=post_data, timeout=30)
+        
+        logger.info(f"📬 Response: {response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
-            post_id = result.get('id', result.get('post_id', 'unknown'))
+            post_id = result.get('id', 'unknown')
             
+            logger.info("=" * 70)
             if FB_PUBLISH_AS_DRAFT:
-                logger.info(f"✅ Facebook: Saved as DRAFT! Post ID: {post_id}")
-                logger.info(f"📝 Review at: https://business.facebook.com/latest/content_publishing")
-                logger.info(f"💡 You can now review and publish to Facebook & Instagram!")
+                logger.info(f"✅ DRAFT SAVED SUCCESSFULLY!")
+                logger.info(f"📝 Post ID: {post_id}")
+                logger.info("")
+                logger.info("🔍 CHECK YOUR DRAFTS HERE:")
+                logger.info("   → https://business.facebook.com/latest/content_publishing")
+                logger.info("   → https://business.facebook.com/creatorstudio")
+                logger.info("")
+                logger.info("💡 TIP: Drafts may take 1-2 minutes to appear. Refresh the page.")
             else:
-                logger.info(f"✅ Facebook: Published LIVE! Post ID: {post_id}")
-                logger.info(f"🔗 View at: https://facebook.com/{post_id}")
+                logger.info(f"✅ PUBLISHED LIVE!")
+                logger.info(f"📝 Post ID: {post_id}")
+                logger.info(f"🔗 View: https://facebook.com/{post_id}")
+            logger.info("=" * 70)
             
             return True
         else:
-            logger.error(f"❌ Facebook API error: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-            
-            # محاولة بدون وسائط إذا فشل
-            if media_path:
-                logger.warning("⚠️ Retrying without media...")
-                return send_to_facebook(message, None)
-            
+            logger.error(f"❌ Facebook API Error: {response.status_code}")
+            error_data = response.json() if response.text else {}
+            logger.error(f"Error: {error_data.get('error', {}).get('message', response.text[:500])}")
             return False
             
-    except FileNotFoundError:
-        logger.error(f"❌ Media file not found: {media_path}")
-        return send_to_facebook(message, None)
     except Exception as e:
-        logger.error(f"❌ Facebook publishing failed: {str(e)}")
+        logger.error(f"❌ Facebook posting failed: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
         return False
@@ -357,15 +344,19 @@ async def main():
     logger.info(f"📡 Sources: {', '.join(SOURCE_CHANNELS)}")
     logger.info("=" * 70)
     
+    # التحقق من Facebook Token
+    if POST_TO_FACEBOOK and not verify_facebook_token():
+        logger.error("❌ Facebook token verification failed!")
+        logger.error("Please check your FB_ACCESS_TOKEN and regenerate if needed")
+        return False
+    
     try:
-        # الاتصال بـ Telegram
         await client.start()
         logger.info("✅ Connected to Telegram")
         
-        # جلب المحتوى
         post = await get_content_from_sources()
         if not post:
-            logger.error("❌ No suitable content found in any source channel")
+            logger.error("❌ No suitable content found")
             await client.disconnect()
             return False
         
@@ -376,66 +367,60 @@ async def main():
             await client.disconnect()
             return False
         
-        logger.info(f"📄 Original content: {text[:150]}...")
+        logger.info(f"📄 Original: {text[:150]}...")
         
-        # تحميل الوسائط
         media_path = None
         if post.photo or post.video:
             try:
                 logger.info("📥 Downloading media...")
                 media_path = await post.download_media()
-                logger.info(f"✅ Media downloaded: {media_path}")
+                logger.info(f"✅ Downloaded: {media_path}")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to download media: {str(e)}")
+                logger.warning(f"⚠️ Media download failed: {str(e)}")
         
-        # إعادة صياغة للمنصتين
-        logger.info("🤖 Starting AI content generation...")
+        logger.info("🤖 Generating content...")
         
         telegram_content = await ai_rewrite_content(text, "telegram")
         if not telegram_content:
-            logger.error("❌ Failed to generate Telegram content")
+            logger.error("❌ Telegram content generation failed")
             await client.disconnect()
             return False
         
         facebook_content = await ai_rewrite_content(text, "facebook")
         if not facebook_content:
-            logger.error("❌ Failed to generate Facebook content")
+            logger.error("❌ Facebook content generation failed")
             await client.disconnect()
             return False
         
-        # إضافة التوقيت
         timestamp = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
         telegram_message = telegram_content + timestamp
         facebook_message = facebook_content + timestamp
         
         logger.info("=" * 70)
-        logger.info("📝 CONTENT PREVIEW:")
-        logger.info(f"Telegram: {telegram_message[:200]}...")
-        logger.info(f"Facebook: {facebook_message[:200]}...")
+        logger.info("📝 PREVIEW:")
+        logger.info(f"TG: {telegram_message[:180]}...")
+        logger.info(f"FB: {facebook_message[:180]}...")
         logger.info("=" * 70)
         
-        # النشر
         telegram_success = await send_to_telegram(telegram_message, media_path)
         facebook_success = send_to_facebook(facebook_message, media_path)
         
-        # تنظيف
         if media_path and os.path.exists(media_path):
             try:
                 os.remove(media_path)
-                logger.info(f"🗑️ Cleaned up: {media_path}")
+                logger.info(f"🗑️ Cleaned: {media_path}")
             except:
                 pass
         
         await client.disconnect()
         
-        # النتيجة
         logger.info("=" * 70)
         if telegram_success and facebook_success:
-            logger.info("✨ SUCCESS! Published to all platforms!")
+            logger.info("✨ SUCCESS! All platforms complete!")
             if FB_PUBLISH_AS_DRAFT:
-                logger.info("💡 Facebook post is in DRAFT - review before publishing")
+                logger.info("💡 Facebook draft ready for review")
         elif telegram_success or facebook_success:
-            logger.warning("⚠️ Partial success - check logs")
+            logger.warning("⚠️ Partial success")
         else:
             logger.error("❌ All platforms failed")
         logger.info("=" * 70)
@@ -443,7 +428,7 @@ async def main():
         return telegram_success or facebook_success
         
     except Exception as e:
-        logger.error(f"❌ Fatal error in main: {str(e)}")
+        logger.error(f"❌ Fatal error: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
         try:
