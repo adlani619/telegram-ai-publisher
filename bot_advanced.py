@@ -51,6 +51,15 @@ POST_TO_TELEGRAM = os.getenv("POST_TO_TELEGRAM", "true").lower() == "true"
 POST_TO_FACEBOOK = os.getenv("POST_TO_FACEBOOK", "true").lower() == "true"
 MIN_CONTENT_LENGTH = int(os.getenv("MIN_CONTENT_LENGTH", "100"))
 
+# Facebook posting hours (UTC)
+FACEBOOK_POSTING_HOURS = {0, 7, 9, 12, 16, 18, 20, 22}
+current_hour = datetime.utcnow().hour
+if current_hour not in FACEBOOK_POSTING_HOURS:
+    POST_TO_FACEBOOK = False
+    logger.info(f"⏰ Current hour {current_hour} UTC - Facebook posting disabled (only posts at: {sorted(FACEBOOK_POSTING_HOURS)})")
+else:
+    logger.info(f"⏰ Current hour {current_hour} UTC - Facebook posting enabled")
+
 # ====== VALIDATION ======
 if not all([TARGET_CHANNEL, OPENAI_API_KEY, API_ID, API_HASH, USER_SESSION_BASE64]):
     logger.error("❌ Missing Telegram credentials")
