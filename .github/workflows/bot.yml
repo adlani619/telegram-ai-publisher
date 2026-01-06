@@ -2,8 +2,8 @@ name: 🤖 Auto-Post Bot (Every 2 Hours)
 
 on:
   schedule:
-    # كل ساعتين - 12 مرة يومياً
-    - cron: '0 */2 * * *'
+    # كل نصف ساعة - 48 مرة يومياً
+    - cron: '*/30 * * * *'
     
   workflow_dispatch:
   
@@ -50,10 +50,10 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
           
-          # Facebook - نشر مباشر
+          # Facebook - نشر كمسودة للمراجعة
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
-          FB_PUBLISH_AS_DRAFT: "false"
+          FB_PUBLISH_AS_DRAFT: "true"
           
           # OpenAI
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
