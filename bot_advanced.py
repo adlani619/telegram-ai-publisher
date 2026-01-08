@@ -3,6 +3,7 @@
 """
 🤖 Telegram Content Aggregator Bot
 يجلب المحتوى من قنوات تيليغرام ويعيد نشره بشكل احترافي
+Bilingual Edition: Arabic + English
 """
 
 import os
@@ -13,7 +14,7 @@ import requests
 import random
 import base64
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from telethon import TelegramClient
 from telethon.tl.types import Message
 
@@ -43,14 +44,6 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Settings
 POSTS_LIMIT = int(os.getenv("POSTS_LIMIT", "10"))
 MIN_CONTENT_LENGTH = int(os.getenv("MIN_CONTENT_LENGTH", "100"))
-
-# ====== Facebook Configuration (مخفي - يمكن تفعيله لاحقاً) ======
-"""
-FB_PAGE_ID = os.getenv("FB_PAGE_ID")
-FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
-FB_PUBLISH_AS_DRAFT = os.getenv("FB_PUBLISH_AS_DRAFT", "false").lower() == "true"
-POST_TO_FACEBOOK = os.getenv("POST_TO_FACEBOOK", "false").lower() == "true"
-"""
 
 # ====== VALIDATION ======
 if not all([TARGET_CHANNEL, OPENAI_API_KEY, API_ID, API_HASH, USER_SESSION_BASE64]):
@@ -105,9 +98,9 @@ async def get_content_from_sources() -> Optional[Message]:
     logger.info(f"✅ تم اختيار منشور من @{source}")
     return selected
 
-# ====== AI PROCESSING ======
-async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
-    """إعادة صياغة المحتوى بالذكاء الاصطناعي مع هاشتاغات احترافية"""
+# ====== AI PROCESSING - ARABIC VERSION ======
+async def ai_rewrite_arabic(text: str, max_retries: int = 3) -> Optional[str]:
+    """إعادة صياغة المحتوى بالعربية"""
     
     if not text or len(text.strip()) < 50:
         logger.error("❌ المحتوى قصير جداً للمعالجة")
@@ -116,7 +109,7 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
     prompt = f"""
 أنت خبير تسويق محتوى على وسائل التواصل الاجتماعي (تيليغرام، فيسبوك، إنستغرام).
 
-أعد صياغة المحتوى التالي بشكل احترافي وجذاب:
+أعد صياغة المحتوى التالي بشكل احترافي وجذاب بالعربية:
 
 ✅ المتطلبات:
 1. عنوان قوي وجذاب مع إيموجي مناسب
@@ -124,7 +117,7 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
 3. إذا كان المحتوى بالإنجليزية، ترجمه للعربية
 4. أسلوب طبيعي وجذاب (ليس آلياً)
 5. احتفظ بجميع المعلومات المهمة
-6. أضف 5-8 هاشتاغات ذات صلة باللغة العربية والإنجليزية (مناسبة للتيليغرام وفيسبوك وإنستغرام)
+6. أضف 5-8 هاشتاغات ذات صلة باللغة العربية والإنجليزية
 7. اجعل الهاشتاغات متنوعة: عامة، متخصصة، وترند
 
 ❌ تجنب:
@@ -134,13 +127,56 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
 
 المحتوى الأصلي:
 {text}
-
-ملاحظة: اجعل المحتوى صالحاً للنشر على تيليغرام وفيسبوك وإنستغرام معاً.
 """
+    
+    return await _call_openai(prompt, max_retries, "Arabic")
+
+# ====== AI PROCESSING - ENGLISH VERSION ======
+async def ai_rewrite_english(text: str, max_retries: int = 3) -> Optional[str]:
+    """إعادة صياغة المحتوى بالإنجليزية لتويتر"""
+    
+    if not text or len(text.strip()) < 50:
+        logger.error("❌ المحتوى قصير جداً للمعالجة")
+        return None
+    
+    prompt = f"""
+You are an expert social media content strategist specializing in Twitter/X engagement and international audiences.
+
+Rewrite the following content in PROFESSIONAL, ENGAGING ENGLISH optimized for Twitter/X:
+
+✅ REQUIREMENTS:
+1. Create a compelling hook with relevant emoji
+2. 4-6 clear, punchy lines (Twitter-optimized)
+3. Translate from Arabic if needed
+4. Natural, conversational tone (not robotic or corporate)
+5. Preserve all key information and insights
+6. Add 5-8 trending hashtags (mix of general, niche, and trending)
+7. Make it shareable and engaging for international tech/business audience
+8. Use power words and curiosity gaps
+9. Include a subtle call-to-action if appropriate
+
+❌ AVOID:
+- Generic corporate speak
+- Overly formal language
+- Boring, predictable phrasing
+- Verbatim copying
+- Too many hashtags in the main text (put them at the end)
+
+ORIGINAL CONTENT:
+{text}
+
+Note: Make it viral-worthy for Twitter/X. Think: professional yet exciting, informative yet engaging.
+"""
+    
+    return await _call_openai(prompt, max_retries, "English")
+
+# ====== OPENAI API CALLER ======
+async def _call_openai(prompt: str, max_retries: int, language: str) -> Optional[str]:
+    """استدعاء OpenAI API مع إعادة المحاولة"""
     
     for attempt in range(1, max_retries + 1):
         try:
-            logger.info(f"🤖 جاري إعادة صياغة المحتوى (محاولة {attempt}/{max_retries})...")
+            logger.info(f"🤖 جاري إعادة صياغة المحتوى ({language}) (محاولة {attempt}/{max_retries})...")
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
@@ -160,27 +196,31 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
                 result = response.json()['choices'][0]['message']['content'].strip()
                 
                 # فلترة الردود السيئة
-                bad_phrases = ["بالطبع", "يُرجى تزويدي", "سأكون سعيد", "عذراً", "آسف"]
-                if any(phrase in result[:150] for phrase in bad_phrases):
-                    logger.warning(f"⚠️ الذكاء الاصطناعي أعاد رد عام، إعادة المحاولة...")
+                if language == "Arabic":
+                    bad_phrases = ["بالطبع", "يُرجى تزويدي", "سأكون سعيد", "عذراً", "آسف"]
+                else:
+                    bad_phrases = ["of course", "please provide", "i'd be happy", "sorry", "i apologize"]
+                
+                if any(phrase.lower() in result[:150].lower() for phrase in bad_phrases):
+                    logger.warning(f"⚠️ الذكاء الاصطناعي أعاد رد عام ({language})، إعادة المحاولة...")
                     if attempt < max_retries:
                         await asyncio.sleep(2)
                         continue
                 
                 if len(result) < 100:
-                    logger.warning(f"⚠️ المخرج قصير جداً، إعادة المحاولة...")
+                    logger.warning(f"⚠️ المخرج قصير جداً ({language})، إعادة المحاولة...")
                     if attempt < max_retries:
                         await asyncio.sleep(2)
                         continue
                 
                 # التحقق من وجود هاشتاغات
                 if '#' not in result:
-                    logger.warning(f"⚠️ لا توجد هاشتاغات، إعادة المحاولة...")
+                    logger.warning(f"⚠️ لا توجد هاشتاغات ({language})، إعادة المحاولة...")
                     if attempt < max_retries:
                         await asyncio.sleep(2)
                         continue
                 
-                logger.info(f"✅ تمت المعالجة بنجاح! معاينة: {result[:120]}...")
+                logger.info(f"✅ تمت المعالجة بنجاح ({language})! معاينة: {result[:120]}...")
                 return result
             else:
                 logger.warning(f"⚠️ خطأ من OpenAI: {response.status_code}")
@@ -188,127 +228,44 @@ async def ai_rewrite_content(text: str, max_retries: int = 3) -> Optional[str]:
         except requests.exceptions.Timeout:
             logger.error(f"⏱️ انتهت مهلة الطلب في المحاولة {attempt}")
         except Exception as e:
-            logger.error(f"❌ خطأ في الذكاء الاصطناعي: {str(e)}")
+            logger.error(f"❌ خطأ في الذكاء الاصطناعي ({language}): {str(e)}")
         
         if attempt < max_retries:
             wait_time = attempt * 3
             logger.info(f"⏳ انتظار {wait_time} ثانية قبل إعادة المحاولة...")
             await asyncio.sleep(wait_time)
     
-    logger.error("❌ فشلت المعالجة بعد جميع المحاولات")
+    logger.error(f"❌ فشلت المعالجة ({language}) بعد جميع المحاولات")
     return None
 
 # ====== TELEGRAM SENDER ======
-async def send_to_telegram(message: str, media_path: Optional[str] = None) -> bool:
+async def send_to_telegram(message: str, media_path: Optional[str] = None, language: str = "AR") -> bool:
     """نشر على قناة تيليغرام"""
     try:
-        logger.info("📤 جاري النشر على تيليغرام...")
+        lang_label = "🇸🇦 Arabic" if language == "AR" else "🇬🇧 English"
+        logger.info(f"📤 جاري النشر على تيليغرام ({lang_label})...")
+        
         if media_path and os.path.exists(media_path):
             await client.send_file(TARGET_CHANNEL, media_path, caption=message)
-            logger.info("✅ تم النشر مع الوسائط بنجاح!")
+            logger.info(f"✅ تم النشر ({lang_label}) مع الوسائط بنجاح!")
         else:
             await client.send_message(TARGET_CHANNEL, message)
-            logger.info("✅ تم النشر بنجاح!")
+            logger.info(f"✅ تم النشر ({lang_label}) بنجاح!")
+        
         return True
     except Exception as e:
-        logger.error(f"❌ فشل النشر على تيليغرام: {str(e)}")
+        logger.error(f"❌ فشل النشر على تيليغرام ({language}): {str(e)}")
         return False
-
-# ====== Facebook Functions (مخفية - يمكن تفعيلها لاحقاً) ======
-"""
-def send_to_facebook(message: str, media_path: Optional[str] = None) -> bool:
-    if not POST_TO_FACEBOOK:
-        logger.info("⏭️ النشر على فيسبوك معطل")
-        return True
-    
-    try:
-        published_status = "false" if FB_PUBLISH_AS_DRAFT else "true"
-        status_text = "مسودة 📝" if FB_PUBLISH_AS_DRAFT else "مباشر ✅"
-        
-        logger.info(f"📤 جاري النشر على فيسبوك كـ {status_text}...")
-        
-        base_url = f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}"
-        
-        if media_path and os.path.exists(media_path):
-            file_ext = media_path.lower()
-            
-            if any(ext in file_ext for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
-                logger.info(f"📸 نشر صورة كـ {status_text}...")
-                endpoint = f"{base_url}/photos"
-                
-                with open(media_path, 'rb') as photo:
-                    files = {'source': photo}
-                    data = {
-                        'message': message,
-                        'access_token': FB_ACCESS_TOKEN,
-                        'published': published_status
-                    }
-                    response = requests.post(endpoint, files=files, data=data, timeout=60)
-                    
-            elif any(ext in file_ext for ext in ['.mp4', '.mov', '.avi', '.mkv']):
-                logger.info(f"🎥 نشر فيديو كـ {status_text}...")
-                endpoint = f"{base_url}/videos"
-                
-                with open(media_path, 'rb') as video:
-                    files = {'source': video}
-                    data = {
-                        'description': message,
-                        'access_token': FB_ACCESS_TOKEN,
-                        'published': published_status
-                    }
-                    response = requests.post(endpoint, files=files, data=data, timeout=120)
-            else:
-                logger.warning(f"⚠️ نوع ملف غير مدعوم، نشر نص فقط")
-                return send_to_facebook(message, None)
-        else:
-            logger.info(f"📝 نشر نص كـ {status_text}...")
-            endpoint = f"{base_url}/feed"
-            
-            data = {
-                'message': message,
-                'access_token': FB_ACCESS_TOKEN,
-                'published': published_status
-            }
-            response = requests.post(endpoint, data=data, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            post_id = result.get('id', result.get('post_id', 'unknown'))
-            
-            if FB_PUBLISH_AS_DRAFT:
-                logger.info(f"✅ فيسبوك: تم الحفظ كمسودة! معرف المنشور: {post_id}")
-            else:
-                logger.info(f"✅ فيسبوك: تم النشر مباشرة! معرف المنشور: {post_id}")
-            
-            return True
-        else:
-            logger.error(f"❌ خطأ في واجهة فيسبوك: {response.status_code}")
-            logger.error(f"الرد: {response.text}")
-            
-            if media_path:
-                logger.warning("⚠️ إعادة المحاولة بدون وسائط...")
-                return send_to_facebook(message, None)
-            
-            return False
-            
-    except FileNotFoundError:
-        logger.error(f"❌ الملف غير موجود: {media_path}")
-        return send_to_facebook(message, None)
-    except Exception as e:
-        logger.error(f"❌ فشل النشر على فيسبوك: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return False
-"""
 
 # ====== MAIN EXECUTION ======
 async def main():
     """البرنامج الرئيسي"""
     logger.info("=" * 70)
-    logger.info("🤖 بوت النشر التلقائي على تيليغرام")
+    logger.info("🤖 بوت النشر التلقائي على تيليغرام (ثنائي اللغة)")
     logger.info(f"📅 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     logger.info(f"📢 القناة: {TARGET_CHANNEL}")
     logger.info(f"📡 المصادر: {', '.join(SOURCE_CHANNELS)}")
+    logger.info(f"🌐 اللغات: العربية + الإنجليزية")
     logger.info("=" * 70)
     
     try:
@@ -342,26 +299,56 @@ async def main():
             except Exception as e:
                 logger.warning(f"⚠️ فشل تحميل الوسائط: {str(e)}")
         
-        # إعادة صياغة المحتوى
-        logger.info("🤖 جاري توليد المحتوى بالذكاء الاصطناعي...")
+        # ==== توليد المحتوى بالعربية ====
+        logger.info("\n" + "=" * 70)
+        logger.info("🇸🇦 توليد المحتوى بالعربية...")
+        logger.info("=" * 70)
         
-        rewritten_content = await ai_rewrite_content(text)
-        if not rewritten_content:
-            logger.error("❌ فشل في توليد المحتوى")
+        arabic_content = await ai_rewrite_arabic(text)
+        if not arabic_content:
+            logger.error("❌ فشل في توليد المحتوى العربي")
+            await client.disconnect()
+            return False
+        
+        # ==== توليد المحتوى بالإنجليزية ====
+        logger.info("\n" + "=" * 70)
+        logger.info("🇬🇧 توليد المحتوى بالإنجليزية (لتويتر)...")
+        logger.info("=" * 70)
+        
+        english_content = await ai_rewrite_english(text)
+        if not english_content:
+            logger.error("❌ فشل في توليد المحتوى الإنجليزي")
             await client.disconnect()
             return False
         
         # إضافة التوقيت
         timestamp = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
-        final_message = rewritten_content + timestamp
         
+        arabic_final = arabic_content + timestamp
+        english_final = english_content + timestamp
+        
+        # معاينة المحتوى
+        logger.info("\n" + "=" * 70)
+        logger.info("📝 معاينة المحتوى العربي:")
         logger.info("=" * 70)
-        logger.info("📝 معاينة المحتوى النهائي:")
-        logger.info(final_message[:300] + "...")
+        logger.info(arabic_final[:300] + "...")
+        
+        logger.info("\n" + "=" * 70)
+        logger.info("📝 معاينة المحتوى الإنجليزي (Twitter-ready):")
+        logger.info("=" * 70)
+        logger.info(english_final[:300] + "...")
+        
+        # ==== النشر على تيليغرام ====
+        logger.info("\n" + "=" * 70)
+        logger.info("📤 بدء النشر على تيليغرام...")
         logger.info("=" * 70)
         
-        # النشر على تيليغرام
-        success = await send_to_telegram(final_message, media_path)
+        # نشر النسخة العربية (مع الوسائط إن وجدت)
+        success_ar = await send_to_telegram(arabic_final, media_path, "AR")
+        await asyncio.sleep(3)  # تأخير بين المنشورين
+        
+        # نشر النسخة الإنجليزية (بدون وسائط لتجنب التكرار)
+        success_en = await send_to_telegram(english_final, None, "EN")
         
         # تنظيف الملفات المؤقتة
         if media_path and os.path.exists(media_path):
@@ -374,15 +361,23 @@ async def main():
         await client.disconnect()
         
         # النتيجة النهائية
-        logger.info("=" * 70)
-        if success:
+        logger.info("\n" + "=" * 70)
+        if success_ar and success_en:
             logger.info("✨ نجح! تم النشر على تيليغرام بنجاح!")
-            logger.info("💡 يمكنك الآن نسخ المحتوى يدوياً لفيسبوك وإنستغرام")
+            logger.info("🇸🇦 المنشور العربي: ✅")
+            logger.info("🇬🇧 المنشور الإنجليزي: ✅")
+            logger.info("\n💡 خطوات ما بعد النشر:")
+            logger.info("  1. انسخ المنشور العربي لفيسبوك وإنستغرام")
+            logger.info("  2. انسخ المنشور الإنجليزي لتويتر/X")
+        elif success_ar or success_en:
+            logger.warning("⚠️ نجح جزئياً:")
+            logger.info(f"🇸🇦 المنشور العربي: {'✅' if success_ar else '❌'}")
+            logger.info(f"🇬🇧 المنشور الإنجليزي: {'✅' if success_en else '❌'}")
         else:
-            logger.error("❌ فشل النشر")
+            logger.error("❌ فشل النشر بالكامل")
         logger.info("=" * 70)
         
-        return success
+        return success_ar or success_en
         
     except Exception as e:
         logger.error(f"❌ خطأ فادح: {str(e)}")
