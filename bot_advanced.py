@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🤖 Telegram Content Aggregator Bot
+🤖 Telegram & Twitter Content Aggregator Bot
 يجلب المحتوى من قنوات تيليغرام ويعيد نشره بشكل احترافي
-Bilingual Edition: Arabic + English
+Bilingual Edition: Arabic (Telegram) + English Thread (Twitter/X)
 """
 
 import os
@@ -14,7 +14,7 @@ import requests
 import random
 import base64
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List
 from telethon import TelegramClient
 from telethon.tl.types import Message
 
@@ -100,7 +100,7 @@ async def get_content_from_sources() -> Optional[Message]:
 
 # ====== AI PROCESSING - ARABIC VERSION ======
 async def ai_rewrite_arabic(text: str, max_retries: int = 3) -> Optional[str]:
-    """إعادة صياغة المحتوى بالعربية"""
+    """إعادة صياغة المحتوى بالعربية للتيليغرام"""
     
     if not text or len(text.strip()) < 50:
         logger.error("❌ المحتوى قصير جداً للمعالجة")
@@ -131,52 +131,103 @@ async def ai_rewrite_arabic(text: str, max_retries: int = 3) -> Optional[str]:
     
     return await _call_openai(prompt, max_retries, "Arabic")
 
-# ====== AI PROCESSING - ENGLISH VERSION ======
-async def ai_rewrite_english(text: str, max_retries: int = 3) -> Optional[str]:
-    """إعادة صياغة المحتوى بالإنجليزية لتويتر"""
+# ====== AI PROCESSING - ENGLISH TWITTER THREAD ======
+async def ai_create_twitter_thread(text: str, max_retries: int = 3) -> Optional[List[str]]:
+    """إنشاء سلسلة تغريدات احترافية بالإنجليزية لتويتر"""
     
     if not text or len(text.strip()) < 50:
         logger.error("❌ المحتوى قصير جداً للمعالجة")
         return None
     
     prompt = f"""
-You are an expert social media content strategist specializing in Twitter/X engagement and international audiences.
+You are a VIRAL TWITTER/X CONTENT STRATEGIST specializing in creating high-engagement threads for international tech/business audiences.
 
-Rewrite the following content in PROFESSIONAL, ENGAGING ENGLISH optimized for Twitter/X:
+Create a PROFESSIONAL TWITTER THREAD (5-8 tweets) from this content:
 
-✅ REQUIREMENTS:
-1. Create a compelling hook with relevant emoji
-2. 4-6 clear, punchy lines (Twitter-optimized)
-3. Translate from Arabic if needed
-4. Natural, conversational tone (not robotic or corporate)
-5. Preserve all key information and insights
-6. Add 5-8 trending hashtags (mix of general, niche, and trending)
-7. Make it shareable and engaging for international tech/business audience
-8. Use power words and curiosity gaps
-9. Include a subtle call-to-action if appropriate
+✅ CRITICAL REQUIREMENTS:
+1. **HOOK TWEET (Tweet 1)**: 
+   - Must be 200-250 characters MAX
+   - Use a powerful hook: question, bold statement, or shocking fact
+   - Add 1-2 relevant emojis
+   - Create curiosity gap - make them NEED to read more
+   
+2. **BODY TWEETS (Tweets 2-6)**:
+   - Each tweet: 230-270 characters MAX
+   - One clear idea per tweet
+   - Use line breaks for readability
+   - Include power words and action verbs
+   - Translate from Arabic if needed
+   - Keep it punchy and engaging
+   
+3. **FINAL TWEET (Last tweet)**:
+   - 200-250 characters MAX
+   - Strong call-to-action (engage, share, comment)
+   - End with 2-3 trending hashtags only
+   
+4. **THREAD STRUCTURE**:
+   - Tell a story: Problem → Insight → Solution → Impact
+   - Use "🧵" or numbering (1/, 2/, etc.) to indicate thread
+   - Make it conversational, not corporate
+   - Think viral potential - what would make someone hit RT?
+
+5. **HASHTAG STRATEGY**:
+   - Only in the LAST tweet
+   - 2-3 hashtags MAX (Twitter best practice)
+   - Mix: 1 trending + 1 niche + 1 branded
+   - Examples: #AI #TechNews #Innovation #Startup #FutureTech
 
 ❌ AVOID:
+- Tweets over 280 characters (will be rejected!)
 - Generic corporate speak
-- Overly formal language
-- Boring, predictable phrasing
-- Verbatim copying
-- Too many hashtags in the main text (put them at the end)
+- Too many hashtags (looks spammy)
+- Boring openings
+- Hashtags in middle tweets (reduces engagement)
+
+📊 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+TWEET 1: [Hook tweet here - max 250 chars]
+TWEET 2: [Body tweet here - max 270 chars]
+TWEET 3: [Body tweet here - max 270 chars]
+...
+TWEET N: [Final tweet with CTA and hashtags - max 250 chars]
 
 ORIGINAL CONTENT:
 {text}
 
-Note: Make it viral-worthy for Twitter/X. Think: professional yet exciting, informative yet engaging.
+Remember: Each tweet must be under 280 characters. Think VIRAL. Think ENGAGEMENT. Make it SHAREABLE!
 """
     
-    return await _call_openai(prompt, max_retries, "English")
+    result = await _call_openai(prompt, max_retries, "Twitter Thread")
+    
+    if not result:
+        return None
+    
+    # Parse the thread into individual tweets
+    tweets = []
+    for line in result.split('\n'):
+        line = line.strip()
+        if line.startswith('TWEET '):
+            # Extract tweet content after "TWEET N:"
+            tweet_content = line.split(':', 1)[1].strip() if ':' in line else line
+            if tweet_content and len(tweet_content) <= 280:
+                tweets.append(tweet_content)
+            elif tweet_content:
+                logger.warning(f"⚠️ تغريدة طويلة جداً ({len(tweet_content)} حرف)، سيتم اقتصاصها")
+                tweets.append(tweet_content[:277] + "...")
+    
+    if not tweets:
+        logger.error("❌ فشل في استخراج التغريدات من النتيجة")
+        return None
+    
+    logger.info(f"✅ تم إنشاء سلسلة من {len(tweets)} تغريدة")
+    return tweets
 
 # ====== OPENAI API CALLER ======
-async def _call_openai(prompt: str, max_retries: int, language: str) -> Optional[str]:
+async def _call_openai(prompt: str, max_retries: int, content_type: str) -> Optional[str]:
     """استدعاء OpenAI API مع إعادة المحاولة"""
     
     for attempt in range(1, max_retries + 1):
         try:
-            logger.info(f"🤖 جاري إعادة صياغة المحتوى ({language}) (محاولة {attempt}/{max_retries})...")
+            logger.info(f"🤖 جاري إنشاء المحتوى ({content_type}) (محاولة {attempt}/{max_retries})...")
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
@@ -187,7 +238,7 @@ async def _call_openai(prompt: str, max_retries: int, language: str) -> Optional
                     "model": "gpt-4o-mini",
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.8,
-                    "max_tokens": 1000
+                    "max_tokens": 1500
                 },
                 timeout=30
             )
@@ -196,31 +247,24 @@ async def _call_openai(prompt: str, max_retries: int, language: str) -> Optional
                 result = response.json()['choices'][0]['message']['content'].strip()
                 
                 # فلترة الردود السيئة
-                if language == "Arabic":
+                if content_type == "Arabic":
                     bad_phrases = ["بالطبع", "يُرجى تزويدي", "سأكون سعيد", "عذراً", "آسف"]
                 else:
                     bad_phrases = ["of course", "please provide", "i'd be happy", "sorry", "i apologize"]
                 
                 if any(phrase.lower() in result[:150].lower() for phrase in bad_phrases):
-                    logger.warning(f"⚠️ الذكاء الاصطناعي أعاد رد عام ({language})، إعادة المحاولة...")
+                    logger.warning(f"⚠️ الذكاء الاصطناعي أعاد رد عام ({content_type})، إعادة المحاولة...")
                     if attempt < max_retries:
                         await asyncio.sleep(2)
                         continue
                 
                 if len(result) < 100:
-                    logger.warning(f"⚠️ المخرج قصير جداً ({language})، إعادة المحاولة...")
+                    logger.warning(f"⚠️ المخرج قصير جداً ({content_type})، إعادة المحاولة...")
                     if attempt < max_retries:
                         await asyncio.sleep(2)
                         continue
                 
-                # التحقق من وجود هاشتاغات
-                if '#' not in result:
-                    logger.warning(f"⚠️ لا توجد هاشتاغات ({language})، إعادة المحاولة...")
-                    if attempt < max_retries:
-                        await asyncio.sleep(2)
-                        continue
-                
-                logger.info(f"✅ تمت المعالجة بنجاح ({language})! معاينة: {result[:120]}...")
+                logger.info(f"✅ تمت المعالجة بنجاح ({content_type})!")
                 return result
             else:
                 logger.warning(f"⚠️ خطأ من OpenAI: {response.status_code}")
@@ -228,21 +272,21 @@ async def _call_openai(prompt: str, max_retries: int, language: str) -> Optional
         except requests.exceptions.Timeout:
             logger.error(f"⏱️ انتهت مهلة الطلب في المحاولة {attempt}")
         except Exception as e:
-            logger.error(f"❌ خطأ في الذكاء الاصطناعي ({language}): {str(e)}")
+            logger.error(f"❌ خطأ في الذكاء الاصطناعي ({content_type}): {str(e)}")
         
         if attempt < max_retries:
             wait_time = attempt * 3
             logger.info(f"⏳ انتظار {wait_time} ثانية قبل إعادة المحاولة...")
             await asyncio.sleep(wait_time)
     
-    logger.error(f"❌ فشلت المعالجة ({language}) بعد جميع المحاولات")
+    logger.error(f"❌ فشلت المعالجة ({content_type}) بعد جميع المحاولات")
     return None
 
 # ====== TELEGRAM SENDER ======
 async def send_to_telegram(message: str, media_path: Optional[str] = None, language: str = "AR") -> bool:
     """نشر على قناة تيليغرام"""
     try:
-        lang_label = "🇸🇦 Arabic" if language == "AR" else "🇬🇧 English"
+        lang_label = "🇸🇦 Arabic" if language == "AR" else "🇬🇧 English Thread"
         logger.info(f"📤 جاري النشر على تيليغرام ({lang_label})...")
         
         if media_path and os.path.exists(media_path):
@@ -257,15 +301,40 @@ async def send_to_telegram(message: str, media_path: Optional[str] = None, langu
         logger.error(f"❌ فشل النشر على تيليغرام ({language}): {str(e)}")
         return False
 
+# ====== FORMAT TWITTER THREAD ======
+def format_twitter_thread(tweets: List[str]) -> str:
+    """تنسيق سلسلة التغريدات للعرض"""
+    if not tweets:
+        return ""
+    
+    formatted = "🐦 TWITTER/X THREAD (Copy-Paste Ready)\n"
+    formatted += "=" * 60 + "\n\n"
+    
+    for i, tweet in enumerate(tweets, 1):
+        char_count = len(tweet)
+        status = "✅" if char_count <= 280 else "❌ TOO LONG"
+        formatted += f"TWEET {i}/{len(tweets)} ({char_count} chars) {status}\n"
+        formatted += f"{tweet}\n"
+        formatted += "-" * 60 + "\n\n"
+    
+    formatted += "💡 INSTRUCTIONS:\n"
+    formatted += "1. Copy each tweet individually\n"
+    formatted += "2. Post Tweet 1 on Twitter/X\n"
+    formatted += "3. Reply to Tweet 1 with Tweet 2\n"
+    formatted += "4. Continue replying to create the thread\n"
+    formatted += "5. OR use Twitter's thread composer (+ button)\n"
+    
+    return formatted
+
 # ====== MAIN EXECUTION ======
 async def main():
     """البرنامج الرئيسي"""
     logger.info("=" * 70)
-    logger.info("🤖 بوت النشر التلقائي على تيليغرام (ثنائي اللغة)")
+    logger.info("🤖 بوت النشر التلقائي (تيليغرام + تويتر)")
     logger.info(f"📅 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     logger.info(f"📢 القناة: {TARGET_CHANNEL}")
     logger.info(f"📡 المصادر: {', '.join(SOURCE_CHANNELS)}")
-    logger.info(f"🌐 اللغات: العربية + الإنجليزية")
+    logger.info(f"🌐 اللغات: العربية (تيليغرام) + الإنجليزية (تويتر)")
     logger.info("=" * 70)
     
     try:
@@ -301,7 +370,7 @@ async def main():
         
         # ==== توليد المحتوى بالعربية ====
         logger.info("\n" + "=" * 70)
-        logger.info("🇸🇦 توليد المحتوى بالعربية...")
+        logger.info("🇸🇦 توليد المحتوى بالعربية للتيليغرام...")
         logger.info("=" * 70)
         
         arabic_content = await ai_rewrite_arabic(text)
@@ -310,22 +379,23 @@ async def main():
             await client.disconnect()
             return False
         
-        # ==== توليد المحتوى بالإنجليزية ====
+        # ==== توليد سلسلة التغريدات بالإنجليزية ====
         logger.info("\n" + "=" * 70)
-        logger.info("🇬🇧 توليد المحتوى بالإنجليزية (لتويتر)...")
+        logger.info("🐦 توليد سلسلة تغريدات احترافية لتويتر/X...")
         logger.info("=" * 70)
         
-        english_content = await ai_rewrite_english(text)
-        if not english_content:
-            logger.error("❌ فشل في توليد المحتوى الإنجليزي")
+        twitter_tweets = await ai_create_twitter_thread(text)
+        if not twitter_tweets:
+            logger.error("❌ فشل في توليد سلسلة التغريدات")
             await client.disconnect()
             return False
         
-        # إضافة التوقيت
-        timestamp = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+        # تنسيق سلسلة التغريدات
+        twitter_thread_formatted = format_twitter_thread(twitter_tweets)
         
+        # إضافة التوقيت للمنشور العربي
+        timestamp = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
         arabic_final = arabic_content + timestamp
-        english_final = english_content + timestamp
         
         # معاينة المحتوى
         logger.info("\n" + "=" * 70)
@@ -334,9 +404,9 @@ async def main():
         logger.info(arabic_final[:300] + "...")
         
         logger.info("\n" + "=" * 70)
-        logger.info("📝 معاينة المحتوى الإنجليزي (Twitter-ready):")
+        logger.info("📝 معاينة سلسلة التغريدات:")
         logger.info("=" * 70)
-        logger.info(english_final[:300] + "...")
+        logger.info(twitter_thread_formatted)
         
         # ==== النشر على تيليغرام ====
         logger.info("\n" + "=" * 70)
@@ -345,10 +415,10 @@ async def main():
         
         # نشر النسخة العربية (مع الوسائط إن وجدت)
         success_ar = await send_to_telegram(arabic_final, media_path, "AR")
-        await asyncio.sleep(3)  # تأخير بين المنشورين
+        await asyncio.sleep(3)
         
-        # نشر النسخة الإنجليزية (بدون وسائط لتجنب التكرار)
-        success_en = await send_to_telegram(english_final, None, "EN")
+        # نشر سلسلة التغريدات (بدون وسائط)
+        success_en = await send_to_telegram(twitter_thread_formatted, None, "EN")
         
         # تنظيف الملفات المؤقتة
         if media_path and os.path.exists(media_path):
@@ -365,14 +435,17 @@ async def main():
         if success_ar and success_en:
             logger.info("✨ نجح! تم النشر على تيليغرام بنجاح!")
             logger.info("🇸🇦 المنشور العربي: ✅")
-            logger.info("🇬🇧 المنشور الإنجليزي: ✅")
+            logger.info("🐦 سلسلة التغريدات الإنجليزية: ✅")
             logger.info("\n💡 خطوات ما بعد النشر:")
-            logger.info("  1. انسخ المنشور العربي لفيسبوك وإنستغرام")
-            logger.info("  2. انسخ المنشور الإنجليزي لتويتر/X")
+            logger.info("  1. ✅ انسخ المنشور العربي لفيسبوك وإنستغرام")
+            logger.info("  2. ✅ انسخ سلسلة التغريدات من تيليغرام وانشرها على تويتر/X")
+            logger.info("     - افتح تويتر واضغط على زر التغريد")
+            logger.info("     - الصق التغريدة الأولى واضغط على زر + لإضافة التالية")
+            logger.info("     - أو: انشر التغريدة الأولى ثم رد عليها بالتغريدات التالية")
         elif success_ar or success_en:
             logger.warning("⚠️ نجح جزئياً:")
             logger.info(f"🇸🇦 المنشور العربي: {'✅' if success_ar else '❌'}")
-            logger.info(f"🇬🇧 المنشور الإنجليزي: {'✅' if success_en else '❌'}")
+            logger.info(f"🐦 سلسلة التغريدات: {'✅' if success_en else '❌'}")
         else:
             logger.error("❌ فشل النشر بالكامل")
         logger.info("=" * 70)
