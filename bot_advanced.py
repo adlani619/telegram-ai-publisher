@@ -217,7 +217,7 @@ async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Mes
     return messages
 
 async def get_content_from_sources() -> Optional[Message]:
-    """جلب محتوى عشوائي من المصادر"""
+    """جلب محتوى عشوائي من المصادر مع فلترة ذكية"""
     all_messages = []
     for channel in SOURCE_CHANNELS:
         msgs = await fetch_recent_posts(channel, POSTS_LIMIT)
@@ -227,9 +227,43 @@ async def get_content_from_sources() -> Optional[Message]:
         logger.warning("⚠️ لم يتم العثور على محتوى من أي مصدر")
         return None
     
-    selected = random.choice(all_messages)
+    # فلترة المنشورات: نبقي فقط على المنشورات الطويلة نسبياً
+    filtered_messages = [
+        msg for msg in all_messages 
+        if msg.text and len(msg.text.strip()) >= MIN_CONTENT_LENGTH
+    ]
+    
+    if not filtered_messages:
+        logger.warning(f"⚠️ لا توجد منشورات تتجاوز {MIN_CONTENT_LENGTH} حرف")
+        logger.info("📊 إحصائيات المنشورات المتاحة:")
+        for msg in all_messages[:5]:
+            length = len(msg.text) if msg.text else 0
+            logger.info(f"  - {length} حرف")
+        
+        # نجرب تقليل الحد الأدنى مؤقتاً
+        min_acceptable = MIN_CONTENT_LENGTH // 2
+        filtered_messages = [
+            msg for msg in all_messages 
+            if msg.text and len(msg.text.strip()) >= min_acceptable
+        ]
+        
+        if not filtered_messages:
+            logger.error("❌ لا توجد منشورات مناسبة حتى مع معايير مخففة")
+            return None
+        else:
+            logger.warning(f"⚠️ تم التخفيف: استخدام منشورات أطول من {min_acceptable} حرف")
+    
+    # ترتيب حسب الطول (نفضل المنشورات الأطول)
+    filtered_messages.sort(key=lambda m: len(m.text) if m.text else 0, reverse=True)
+    
+    # اختيار من أفضل 30% (الأطول)
+    top_candidates = filtered_messages[:max(1, len(filtered_messages) // 3)]
+    
+    selected = random.choice(top_candidates)
     source = selected.chat.username or selected.chat.title or 'unknown'
-    logger.info(f"✅ تم اختيار منشور من @{source}")
+    text_length = len(selected.text) if selected.text else 0
+    
+    logger.info(f"✅ تم اختيار منشور من @{source} ({text_length} حرف)")
     return selected
 
 # ====== AI PROCESSING - ARABIC VERSION ======
@@ -675,12 +709,34 @@ async def main():
         
         text = post.text if post.text else ""
         
-        if len(text.strip()) < MIN_CONTENT_LENGTH:
-            logger.error(f"❌ المحتوى قصير جداً ({len(text)} حرف)")
-            await client.disconnect()
-            return False
+        original_length = len(text.strip())
+        logger.info(f"📄 طول المحتوى الأصلي: {original_length} حرف")
         
-        logger.info(f"📄 المحتوى الأصلي: {text[:150]}...")
+        # إذا كان المحتوى قصيراً جداً (أقل من الحد الأدنى)
+        if original_length < MIN_CONTENT_LENGTH:
+            logger.warning(f"⚠️ المحتوى أقصر من الحد الأدنى ({original_length}/{MIN_CONTENT_LENGTH} حرف)")
+            
+            # نجرب مع محتوى آخر
+            logger.info("🔄 جاري البحث عن محتوى أطول...")
+            
+            # محاولة ثانية
+            post = await get_content_from_sources()
+            if not post:
+                logger.error("❌ لم يتم العثور على محتوى بديل")
+                await client.disconnect()
+                return False
+            
+            text = post.text if post.text else ""
+            original_length = len(text.strip())
+            logger.info(f"📄 طول المحتوى الجديد: {original_length} حرف")
+            
+            # إذا فشلت المحاولة الثانية أيضاً
+            if original_length < MIN_CONTENT_LENGTH:
+                logger.warning(f"⚠️ المحتوى الجديد أيضاً قصير ({original_length} حرف)")
+                logger.info("💡 سنحاول المعالجة رغم القصر...")
+                # نستمر في المعالجة رغم القصر
+        
+        logger.info(f"📝 المحتوى الأصلي: {text[:150]}...")
         
         # ==== كشف اللغة والترجمة إذا لزم الأمر ====
         logger.info("\n" + "=" * 70)
