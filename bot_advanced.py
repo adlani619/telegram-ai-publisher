@@ -204,6 +204,80 @@ async def translate_to_arabic(text: str, max_retries: int = 2) -> Optional[str]:
     logger.error("❌ فشلت الترجمة بعد جميع المحاولات")
     return None
 
+# ====== TRANSLATION TO ENGLISH ======
+async def translate_to_english(text: str, max_retries: int = 2) -> Optional[str]:
+    """ترجمة النص إلى الإنجليزية باستخدام OpenAI"""
+    
+    for attempt in range(1, max_retries + 1):
+        current_key = get_next_available_key()
+        if not current_key:
+            logger.error("❌ لا توجد مفاتيح API متاحة للترجمة!")
+            return None
+        
+        key_preview = current_key[:8] + "..." + current_key[-4:]
+        logger.info(f"🔄 ترجمة المحتوى إلى الإنجليزية - محاولة {attempt}/{max_retries}")
+        logger.info(f"🔑 استخدام المفتاح: {key_preview}")
+        
+        system_message = "You are a professional translator. Your task is to translate any text to clear, natural English."
+        
+        user_prompt = f"""Translate this text to English:
+
+{text}
+
+English translation (only the translation, no extra comments):"""
+        
+        try:
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {current_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 2000
+                },
+                timeout=45
+            )
+            
+            if response.status_code == 200:
+                translation = response.json()['choices'][0]['message']['content'].strip()
+                
+                # تحقق من أن الترجمة بالإنجليزية (لا توجد أحرف عربية)
+                arabic_chars = sum(1 for c in translation if '\u0600' <= c <= '\u06FF')
+                
+                if arabic_chars == 0 and len(translation) > 20:
+                    logger.info(f"✅ تمت الترجمة للإنجليزية بنجاح! ({len(translation)} حرف)")
+                    return translation
+                else:
+                    logger.warning(f"⚠️ الترجمة تحتوي على {arabic_chars} حرف عربي")
+                    if attempt < max_retries:
+                        await asyncio.sleep(2)
+                        continue
+                
+            elif response.status_code == 429:
+                logger.error(f"🚫 خطأ 429 - المفتاح {key_preview}")
+                mark_key_as_blocked(current_key)
+                await asyncio.sleep(2)
+                continue
+                
+            else:
+                logger.error(f"❌ خطأ في الترجمة: {response.status_code}")
+                
+        except Exception as e:
+            logger.error(f"❌ خطأ في الترجمة: {str(e)}")
+        
+        if attempt < max_retries:
+            await asyncio.sleep(3)
+    
+    logger.error("❌ فشلت الترجمة للإنجليزية بعد جميع المحاولات")
+    return None
+
 # ====== FETCH FROM TELEGRAM ======
 async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Message]:
     """جلب المنشورات من قناة تيليغرام"""
@@ -624,13 +698,30 @@ async def main():
         
         arabic_post = await generate_arabic_post(arabic_text)
         
-        if not arabic_post:
-            logger.warning("⚠️ فشل AI، استخدام النص المترجم مباشرة")
+        if not arabic_post or len(arabic_post) < 100:
+            logger.warning("⚠️ فشل AI أو المحتوى قصير، استخدام النص المعالج مباشرة")
+            # استخدام النص العربي (المترجم أو الأصلي) مع تحسين بسيط
             arabic_post = f"""📢 {arabic_text}
 
-💡 تابعنا للمزيد من المحتوى القيم!
+💡 تابعنا للمزيد من المحتوى التقني القيم!
 
-#تقنية #تكنولوجيا #ابتكار #AI #Tech #Innovation"""
+#تقنية #تكنولوجيا #ابتكار #ذكاء_اصطناعي #AI #Tech #Innovation #TechNews"""
+        
+        # التأكد من وجود محتوى عربي
+        arabic_chars_in_post = sum(1 for c in arabic_post if '\u0600' <= c <= '\u06FF')
+        if arabic_chars_in_post < 50:
+            logger.error("❌ المنشور العربي لا يحتوي على عربي كافٍ!")
+            # خطة طوارئ: استخدام الترجمة أو النص الأصلي
+            if arabic_text and any('\u0600' <= c <= '\u06FF' for c in arabic_text):
+                arabic_post = f"""📢 {arabic_text}
+
+💡 تابعنا للمزيد!
+
+#تقنية #AI #Tech"""
+            else:
+                logger.error("❌ لا يوجد محتوى عربي!")
+                await client.disconnect()
+                return False
         
         # إضافة التوقيت
         timestamp = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
@@ -646,56 +737,29 @@ async def main():
         
         await asyncio.sleep(5)  # تأخير بين الطلبين
         
-        twitter_tweets = await generate_english_twitter_thread(original_text)
-        
         if not twitter_tweets:
-            logger.warning("⚠️ فشل AI للتغريدات، استخدام خطة بديلة إنجليزية...")
+            logger.warning("⚠️ فشل AI للتغريدات، محاولة أخيرة بترجمة مباشرة...")
             
-            # خطة بديلة: تغريدات إنجليزية بسيطة
-            # نتحقق أولاً من لغة المحتوى الأصلي
-            is_arabic = any('\u0600' <= c <= '\u06FF' for c in original_text)
+            # محاولة أخيرة: طلب ترجمة بسيطة للإنجليزية
+            translated_english = await translate_to_english(original_text)
             
-            if is_arabic:
-                # إذا كان المحتوى عربي، نستخدم رسالة عامة بالإنجليزية
+            if translated_english:
+                # استخدام الترجمة الإنجليزية
                 twitter_tweets = [
-                    "🧵 Exciting tech news alert!",
-                    "Discovered something interesting in the tech world that's worth sharing with the community.",
-                    "This could change how we approach innovation and development in the coming months.",
-                    "Follow for more tech insights and updates! #AI #Tech #Innovation"
+                    "🧵 Tech news alert!",
+                    translated_english[:270] if len(translated_english) <= 270 else translated_english[:267] + "...",
+                    "Follow for more updates! #Tech #AI #Innovation"
                 ]
+                logger.info("✅ تم استخدام ترجمة إنجليزية بسيطة")
             else:
-                # إذا كان إنجليزي، نستخدمه مباشرة مع تقسيم ذكي
-                intro = "🧵 Tech insights worth your time:"
-                
-                # تقسيم النص لتغريدات
-                words = original_text.split()
-                body_parts = []
-                current_part = ""
-                
-                for word in words:
-                    # تخطي الكلمات العربية
-                    if any('\u0600' <= c <= '\u06FF' for c in word):
-                        continue
-                    
-                    if len(current_part + " " + word) <= 250:
-                        current_part += (" " + word) if current_part else word
-                    else:
-                        if current_part:
-                            body_parts.append(current_part.strip())
-                        current_part = word
-                
-                if current_part:
-                    body_parts.append(current_part.strip())
-                
-                # تجميع التغريدات
-                twitter_tweets = [intro]
-                for part in body_parts[:2]:  # أول جزئين فقط
-                    if part:
-                        twitter_tweets.append(part)
-                
-                twitter_tweets.append("Follow for daily tech insights! #AI #Tech #Innovation")
-            
-            logger.info(f"✅ تم إنشاء {len(twitter_tweets)} تغريدة بديلة (إنجليزية)")
+                # خطة طوارئ نهائية
+                twitter_tweets = [
+                    "🧵 Breaking tech news!",
+                    "Exciting developments happening in the tech world today. This could reshape how we think about innovation.",
+                    "Major implications for the industry. Stay tuned for more details and analysis!",
+                    "Follow for daily tech insights! #Tech #AI #Innovation"
+                ]
+                logger.warning("⚠️ استخدام تغريدات عامة كخطة طوارئ")
         
         twitter_formatted = format_twitter_thread(twitter_tweets)
         
@@ -707,11 +771,33 @@ async def main():
         logger.info("📤 الخطوة 5: النشر على تيليغرام")
         logger.info("=" * 70)
         
+        # التحقق النهائي قبل النشر
+        if not arabic_final or len(arabic_final) < 50:
+            logger.error("❌ المنشور العربي فارغ أو قصير جداً!")
+            await client.disconnect()
+            return False
+        
+        if not twitter_formatted or len(twitter_formatted) < 50:
+            logger.error("❌ سلسلة التغريدات فارغة!")
+            await client.disconnect()
+            return False
+        
+        logger.info("✅ كلا المنشورين جاهزان للنشر")
+        logger.info(f"   📝 المنشور العربي: {len(arabic_final)} حرف")
+        logger.info(f"   📝 سلسلة التغريدات: {len(twitter_formatted)} حرف")
+        logger.info("")
+        
         # نشر المنشور العربي (مع الوسائط)
+        logger.info("📤 نشر المنشور العربي (1/2)...")
         success_ar = await send_to_telegram(arabic_final, media_path, "🇸🇦 عربي - فيسبوك/إنستغرام")
+        
+        if not success_ar:
+            logger.error("❌ فشل نشر المنشور العربي!")
+        
         await asyncio.sleep(5)
         
         # نشر سلسلة التغريدات الإنجليزية (بدون وسائط)
+        logger.info("📤 نشر سلسلة التغريدات الإنجليزية (2/2)...")
         success_en = await send_to_telegram(twitter_formatted, None, "🐦 إنجليزي - تويتر/X")
         
         # تنظيف الملفات المؤقتة
