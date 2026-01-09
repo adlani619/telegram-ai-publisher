@@ -367,28 +367,41 @@ async def generate_english_twitter_thread(text: str, max_retries: int = 3) -> Op
         logger.info(f"🔑 استخدام المفتاح: {key_preview}")
         
         system_message = """You are a professional Twitter/X content strategist.
-You MUST write ONLY IN ENGLISH. Create engaging, viral-worthy Twitter threads."""
+You MUST write ENTIRELY IN ENGLISH - NO Arabic characters allowed.
+If the input is in Arabic or another language, you MUST translate it to English first.
+Create engaging, viral-worthy Twitter threads in perfect English."""
 
-        user_prompt = f"""Create a professional Twitter/X thread (6-10 tweets) from this content:
+        user_prompt = f"""Create a professional English Twitter/X thread (6-10 tweets) from this content.
+
+⚠️ CRITICAL: Write ONLY in ENGLISH! If the content below is in Arabic or another language, TRANSLATE IT TO ENGLISH FIRST!
 
 📋 Original Content:
 {text}
 
-✅ Requirements:
-1. **ENGLISH ONLY** (translate if needed)
-2. Hook tweet: 220-260 chars, compelling opening
-3. Body tweets: 240-270 chars each, one idea per tweet
-4. Provide real value and insights
-5. Final tweet: CTA + 2-3 hashtags
-6. Format: "TWEET 1: [content]", "TWEET 2: [content]", etc.
+✅ STRICT Requirements:
+1. **100% ENGLISH ONLY** - Zero Arabic characters!
+2. If content is Arabic → Translate to English first
+3. Hook tweet (Tweet 1): 220-260 chars, compelling opening with emoji
+4. Body tweets: 240-270 chars each, one powerful idea per tweet
+5. Final tweet: Strong CTA + 2-3 hashtags
+6. Each tweet MUST be under 280 characters
+7. Format EXACTLY: "TWEET 1: [content]", "TWEET 2: [content]", etc.
 
-❌ Avoid:
-- Any Arabic text
-- Generic language
+✅ Content Strategy:
+- Start with a hook that creates curiosity
+- Provide actionable insights and value
+- Use storytelling elements
+- End with clear call-to-action
+
+❌ ABSOLUTELY FORBIDDEN:
+- ANY Arabic text or characters (أ، ب، ت، etc.)
+- ANY non-English language
+- Generic corporate speak
 - Tweets over 280 characters
-- Too many hashtags
 
-The Twitter Thread:"""
+REMEMBER: Every single word must be in ENGLISH!
+
+The Twitter Thread in ENGLISH:"""
         
         try:
             response = requests.post(
@@ -403,7 +416,7 @@ The Twitter Thread:"""
                         {"role": "system", "content": system_message},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "temperature": 0.8,
+                    "temperature": 0.7,  # أقل قليلاً للحصول على نتائج أكثر دقة
                     "max_tokens": 2000
                 },
                 timeout=60
@@ -417,23 +430,59 @@ The Twitter Thread:"""
                 for line in result.split('\n'):
                     line = line.strip()
                     if line.startswith('TWEET '):
-                        tweet_content = line.split(':', 1)[1].strip() if ':' in line else line
-                        
-                        # تحقق من عدم وجود نص عربي
-                        arabic_chars = sum(1 for c in tweet_content if '\u0600' <= c <= '\u06FF')
-                        if arabic_chars > 5:
+                        # استخراج المحتوى بعد "TWEET N:"
+                        if ':' in line:
+                            tweet_content = line.split(':', 1)[1].strip()
+                        else:
                             continue
                         
-                        if tweet_content and len(tweet_content) <= 280:
+                        # تحقق صارم من عدم وجود أي أحرف عربية
+                        arabic_chars = sum(1 for c in tweet_content if '\u0600' <= c <= '\u06FF')
+                        
+                        if arabic_chars > 0:  # حتى حرف عربي واحد = رفض
+                            logger.warning(f"⚠️ رفض تغريدة تحتوي على {arabic_chars} حرف عربي")
+                            logger.warning(f"   المحتوى المرفوض: {tweet_content[:100]}...")
+                            continue
+                        
+                        # تحقق من الطول
+                        if len(tweet_content) > 280:
+                            logger.warning(f"⚠️ تغريدة طويلة ({len(tweet_content)} حرف)، اقتصاص...")
+                            tweet_content = tweet_content[:277] + "..."
+                        
+                        if tweet_content and len(tweet_content) > 10:  # تأكد أنها ليست فارغة
                             tweets.append(tweet_content)
                 
+                # تحقق نهائي شامل
                 if len(tweets) >= 3:
-                    logger.info(f"✅ تم توليد {len(tweets)} تغريدة إنجليزية")
+                    # فحص جميع التغريدات معاً
+                    all_tweets_text = ' '.join(tweets)
+                    total_arabic = sum(1 for c in all_tweets_text if '\u0600' <= c <= '\u06FF')
+                    total_chars = len(all_tweets_text)
+                    
+                    if total_arabic > 0:
+                        arabic_percentage = (total_arabic / total_chars * 100) if total_chars > 0 else 0
+                        logger.error(f"❌ السلسلة تحتوي على {total_arabic} حرف عربي ({arabic_percentage:.1f}%)")
+                        logger.error("   إعادة المحاولة...")
+                        
+                        if attempt < max_retries:
+                            await asyncio.sleep(4)
+                            continue
+                        else:
+                            # في المحاولة الأخيرة، استخدم خطة بديلة
+                            logger.warning("⚠️ استخدام خطة بديلة للتغريدات")
+                            return None
+                    
+                    logger.info(f"✅ تم توليد {len(tweets)} تغريدة إنجليزية نظيفة 100%")
+                    
+                    # طباعة معاينة للتأكد
+                    for i, tweet in enumerate(tweets[:3], 1):
+                        logger.info(f"   Tweet {i}: {tweet[:80]}...")
+                    
                     return tweets
                 else:
                     logger.warning(f"⚠️ عدد التغريدات قليل ({len(tweets)})")
                     if attempt < max_retries:
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(4)
                         continue
                 
             elif response.status_code == 429:
@@ -444,14 +493,21 @@ The Twitter Thread:"""
                 
             else:
                 logger.error(f"❌ خطأ: {response.status_code}")
+                try:
+                    error_detail = response.json()
+                    logger.error(f"   التفاصيل: {error_detail}")
+                except:
+                    pass
                 
         except Exception as e:
             logger.error(f"❌ خطأ في التوليد: {str(e)}")
         
         if attempt < max_retries:
-            await asyncio.sleep(5)
+            wait_time = 5
+            logger.info(f"⏳ انتظار {wait_time} ثانية قبل إعادة المحاولة...")
+            await asyncio.sleep(wait_time)
     
-    logger.error("❌ فشل توليد سلسلة التغريدات")
+    logger.error("❌ فشل توليد سلسلة التغريدات بعد جميع المحاولات")
     return None
 
 # ====== FORMAT TWITTER THREAD ======
@@ -593,12 +649,53 @@ async def main():
         twitter_tweets = await generate_english_twitter_thread(original_text)
         
         if not twitter_tweets:
-            logger.warning("⚠️ فشل AI، استخدام نسخة بسيطة")
-            twitter_tweets = [
-                "🧵 Interesting tech content worth sharing!",
-                original_text[:250] if len(original_text) <= 250 else original_text[:247] + "...",
-                "Follow for more insights! #AI #Tech #Innovation"
-            ]
+            logger.warning("⚠️ فشل AI للتغريدات، استخدام خطة بديلة إنجليزية...")
+            
+            # خطة بديلة: تغريدات إنجليزية بسيطة
+            # نتحقق أولاً من لغة المحتوى الأصلي
+            is_arabic = any('\u0600' <= c <= '\u06FF' for c in original_text)
+            
+            if is_arabic:
+                # إذا كان المحتوى عربي، نستخدم رسالة عامة بالإنجليزية
+                twitter_tweets = [
+                    "🧵 Exciting tech news alert!",
+                    "Discovered something interesting in the tech world that's worth sharing with the community.",
+                    "This could change how we approach innovation and development in the coming months.",
+                    "Follow for more tech insights and updates! #AI #Tech #Innovation"
+                ]
+            else:
+                # إذا كان إنجليزي، نستخدمه مباشرة مع تقسيم ذكي
+                intro = "🧵 Tech insights worth your time:"
+                
+                # تقسيم النص لتغريدات
+                words = original_text.split()
+                body_parts = []
+                current_part = ""
+                
+                for word in words:
+                    # تخطي الكلمات العربية
+                    if any('\u0600' <= c <= '\u06FF' for c in word):
+                        continue
+                    
+                    if len(current_part + " " + word) <= 250:
+                        current_part += (" " + word) if current_part else word
+                    else:
+                        if current_part:
+                            body_parts.append(current_part.strip())
+                        current_part = word
+                
+                if current_part:
+                    body_parts.append(current_part.strip())
+                
+                # تجميع التغريدات
+                twitter_tweets = [intro]
+                for part in body_parts[:2]:  # أول جزئين فقط
+                    if part:
+                        twitter_tweets.append(part)
+                
+                twitter_tweets.append("Follow for daily tech insights! #AI #Tech #Innovation")
+            
+            logger.info(f"✅ تم إنشاء {len(twitter_tweets)} تغريدة بديلة (إنجليزية)")
         
         twitter_formatted = format_twitter_thread(twitter_tweets)
         
