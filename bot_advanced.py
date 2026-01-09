@@ -151,24 +151,35 @@ async def ai_rewrite_arabic(text: str, max_retries: int = 3) -> Optional[str]:
     prompt = f"""
 أنت خبير تسويق محتوى على وسائل التواصل الاجتماعي (تيليغرام، فيسبوك، إنستغرام).
 
-أعد صياغة المحتوى التالي بشكل احترافي وجذاب بالعربية:
+أعد صياغة المحتوى التالي بشكل احترافي وجذاب ومطوّل بالعربية:
 
-✅ المتطلبات:
-1. عنوان قوي وجذاب مع إيموجي مناسب
-2. 4-6 أسطر واضحة ومنظمة
-3. إذا كان المحتوى بالإنجليزية، ترجمه للعربية
-4. أسلوب طبيعي وجذاب (ليس آلياً)
-5. احتفظ بجميع المعلومات المهمة
-6. أضف 5-8 هاشتاغات ذات صلة باللغة العربية والإنجليزية
-7. اجعل الهاشتاغات متنوعة: عامة، متخصصة، وترند
+✅ المتطلبات الأساسية:
+1. عنوان قوي جداً وجذاب مع إيموجي مميز
+2. أعد كتابة المحتوى بـ 8-12 سطراً على الأقل (وليس 4-6!)
+3. أضف تفاصيل وشرح موسع للفكرة الأساسية
+4. إذا كان المحتوى بالإنجليزية، ترجمه للعربية وأضف معلومات إضافية
+5. اشرح الفوائد والمميزات بالتفصيل
+6. أسلوب طبيعي ومحفز وليس ممل
+7. أضف دعوة للتفاعل في النهاية (مثل: "شارك رأيك"، "جرّبها الآن"، "اشترك لمزيد من المحتوى القيم")
+8. أضف 6-10 هاشتاغات متنوعة (عربية وإنجليزية)
 
-❌ تجنب:
+✅ قواعد المحتوى المطوّل:
+- إذا كان المحتوى عن أداة: اشرح كيف تعمل، من يستفيد منها، لماذا هي مهمة
+- إذا كان المحتوى عن خبر: أضف السياق، التأثير، التوقعات المستقبلية
+- إذا كان المحتوى عن نصيحة: أضف أمثلة، خطوات تطبيقية، فوائد واضحة
+- اجعل القارئ يشعر أنه تعلّم شيئاً قيماً
+
+❌ تجنب تماماً:
+- المحتوى القصير (أقل من 8 أسطر)
 - كلمات مثل "بالطبع"، "يُرجى"، "سأكون سعيداً"
 - الأسلوب الرسمي الممل
-- النسخ الحرفي
+- النسخ الحرفي الحرفي
+- المحتوى السطحي
 
 المحتوى الأصلي:
 {text}
+
+ملاحظة مهمة: المحتوى يجب أن يكون طويلاً ومفصلاً وقيماً، وليس مجرد إعادة صياغة بسيطة!
 """
     
     return await _call_openai(prompt, max_retries, "Arabic")
@@ -182,60 +193,82 @@ async def ai_create_twitter_thread(text: str, max_retries: int = 3) -> Optional[
         return None
     
     prompt = f"""
-You are a VIRAL TWITTER/X CONTENT STRATEGIST specializing in creating high-engagement threads for international tech/business audiences.
+You are a WORLD-CLASS Twitter/X content strategist specializing in VIRAL threads for international tech-savvy audiences.
 
-Create a PROFESSIONAL TWITTER THREAD (5-8 tweets) from this content:
+CRITICAL: Create content ENTIRELY IN ENGLISH! Do NOT use Arabic!
 
-✅ CRITICAL REQUIREMENTS:
-1. **HOOK TWEET (Tweet 1)**: 
-   - Must be 200-250 characters MAX
-   - Use a powerful hook: question, bold statement, or shocking fact
-   - Add 1-2 relevant emojis
-   - Create curiosity gap - make them NEED to read more
-   
-2. **BODY TWEETS (Tweets 2-6)**:
-   - Each tweet: 230-270 characters MAX
-   - One clear idea per tweet
-   - Use line breaks for readability
-   - Include power words and action verbs
-   - Translate from Arabic if needed
-   - Keep it punchy and engaging
-   
-3. **FINAL TWEET (Last tweet)**:
+Create a PROFESSIONAL, ENGAGING TWITTER THREAD (6-10 tweets) from this content:
+
+✅ ABSOLUTE REQUIREMENTS:
+
+1. **LANGUAGE**: 100% ENGLISH ONLY! If the original is in Arabic, TRANSLATE IT FIRST!
+
+2. **HOOK TWEET (Tweet 1)**: 
+   - 220-260 characters MAX
+   - Mind-blowing hook: provocative question, shocking stat, or bold claim
+   - Use power words: "Revolutionary", "Game-changing", "Mind-blowing"
+   - Add strategic emoji (1-2 max)
+   - Create massive curiosity gap
+   - Example: "🚀 AI just changed everything. Here's what 99% of people missed..."
+
+3. **BODY TWEETS (Tweets 2-8)**:
+   - Each: 240-270 characters MAX
+   - One powerful idea per tweet
+   - Use storytelling: Problem → Discovery → Solution → Impact
+   - Include concrete examples, stats, or insights
+   - Break complex ideas into digestible chunks
+   - Use bullet points or numbered lists when helpful
+   - Vary sentence structure for engagement
+
+4. **VALUE-PACKED CONTENT**:
+   - Teach something valuable
+   - Share actionable insights
+   - Provide unique perspective
+   - Include "how-to" elements if applicable
+   - Add context and background
+   - Explain WHY it matters
+
+5. **FINAL TWEET**:
    - 200-250 characters MAX
-   - Strong call-to-action (engage, share, comment)
-   - End with 2-3 trending hashtags only
-   
-4. **THREAD STRUCTURE**:
-   - Tell a story: Problem → Insight → Solution → Impact
-   - Use "🧵" or numbering (1/, 2/, etc.) to indicate thread
-   - Make it conversational, not corporate
-   - Think viral potential - what would make someone hit RT?
+   - Strong CTA: "Like if this helped", "RT to share", "Follow for daily insights"
+   - End with 2-3 trending hashtags ONLY
+   - Examples: #AI #TechNews #Innovation #Web3 #Startup
 
-5. **HASHTAG STRATEGY**:
-   - Only in the LAST tweet
-   - 2-3 hashtags MAX (Twitter best practice)
-   - Mix: 1 trending + 1 niche + 1 branded
-   - Examples: #AI #TechNews #Innovation #Startup #FutureTech
+6. **FORMATTING**:
+   - Use thread indicators: "1/" "2/" etc.
+   - Add 🧵 emoji in first tweet
+   - Strategic line breaks for readability
+   - Bold claims, clear structure
 
-❌ AVOID:
-- Tweets over 280 characters (will be rejected!)
-- Generic corporate speak
-- Too many hashtags (looks spammy)
-- Boring openings
-- Hashtags in middle tweets (reduces engagement)
+✅ CONTENT EXPANSION RULES:
+- If it's about a tool: Explain how it works, who benefits, why it's revolutionary
+- If it's news: Add context, implications, future predictions
+- If it's a tip: Include examples, step-by-step guidance, clear benefits
+- Make readers feel they learned something VALUABLE
 
-📊 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
-TWEET 1: [Hook tweet here - max 250 chars]
-TWEET 2: [Body tweet here - max 270 chars]
-TWEET 3: [Body tweet here - max 270 chars]
+❌ STRICTLY AVOID:
+- ANY Arabic text whatsoever!
+- Generic corporate language
+- Tweets over 280 characters
+- More than 3 hashtags total
+- Boring, predictable openings
+- Superficial content
+
+📊 EXACT FORMAT:
+TWEET 1: 🧵 [Compelling hook in ENGLISH - max 260 chars]
+TWEET 2: [Deep insight in ENGLISH - max 270 chars]
+TWEET 3: [Valuable detail in ENGLISH - max 270 chars]
 ...
-TWEET N: [Final tweet with CTA and hashtags - max 250 chars]
+TWEET N: [CTA + hashtags in ENGLISH - max 250 chars]
 
-ORIGINAL CONTENT:
+ORIGINAL CONTENT (translate if Arabic):
 {text}
 
-Remember: Each tweet must be under 280 characters. Think VIRAL. Think ENGAGEMENT. Make it SHAREABLE!
+REMEMBER: 
+- ENGLISH ONLY! 
+- Make it VIRAL-worthy!
+- Provide REAL VALUE!
+- Each tweet must stand alone but flow together!
 """
     
     result = await _call_openai(prompt, max_retries, "Twitter Thread")
@@ -250,9 +283,16 @@ Remember: Each tweet must be under 280 characters. Think VIRAL. Think ENGAGEMENT
         if line.startswith('TWEET '):
             # Extract tweet content after "TWEET N:"
             tweet_content = line.split(':', 1)[1].strip() if ':' in line else line
+            
+            # تحقق من عدم وجود نص عربي
+            arabic_chars = sum(1 for c in tweet_content if '\u0600' <= c <= '\u06FF')
+            if arabic_chars > 5:
+                logger.warning(f"⚠️ تخطي تغريدة تحتوي على نص عربي: {tweet_content[:50]}...")
+                continue
+            
             if tweet_content and len(tweet_content) <= 280:
                 tweets.append(tweet_content)
-            elif tweet_content:
+            elif tweet_content and len(tweet_content) > 280:
                 logger.warning(f"⚠️ تغريدة طويلة جداً ({len(tweet_content)} حرف)، سيتم اقتصاصها")
                 tweets.append(tweet_content[:277] + "...")
     
@@ -260,7 +300,15 @@ Remember: Each tweet must be under 280 characters. Think VIRAL. Think ENGAGEMENT
         logger.error("❌ فشل في استخراج التغريدات من النتيجة")
         return None
     
-    logger.info(f"✅ تم إنشاء سلسلة من {len(tweets)} تغريدة")
+    # تحقق نهائي: على الأقل 50% من المحتوى يجب أن يكون إنجليزي
+    total_text = ' '.join(tweets)
+    arabic_ratio = sum(1 for c in total_text if '\u0600' <= c <= '\u06FF') / len(total_text) if total_text else 0
+    
+    if arabic_ratio > 0.3:  # أكثر من 30% عربي
+        logger.error(f"❌ نسبة النص العربي مرتفعة جداً ({arabic_ratio*100:.1f}%)!")
+        return None
+    
+    logger.info(f"✅ تم إنشاء سلسلة من {len(tweets)} تغريدة (إنجليزية {(1-arabic_ratio)*100:.1f}%)")
     return tweets
 
 # ====== OPENAI API CALLER WITH MULTI-KEY SUPPORT ======
@@ -301,6 +349,21 @@ async def _call_openai(prompt: str, max_retries: int, content_type: str) -> Opti
                 # فلترة الردود السيئة
                 if content_type == "Arabic":
                     bad_phrases = ["بالطبع", "يُرجى تزويدي", "سأكون سعيد", "عذراً", "آسف"]
+                    # تحقق من طول المحتوى العربي
+                    if len(result) < 300:  # المحتوى العربي يجب أن يكون مفصلاً
+                        logger.warning(f"⚠️ المحتوى العربي قصير جداً ({len(result)} حرف)، إعادة المحاولة...")
+                        if attempt < max_retries:
+                            await asyncio.sleep(3)
+                            continue
+                elif content_type == "Twitter Thread":
+                    bad_phrases = ["of course", "please provide", "i'd be happy", "sorry", "i apologize"]
+                    # تحقق من عدم وجود نص عربي في التغريدات
+                    arabic_chars = sum(1 for c in result if '\u0600' <= c <= '\u06FF')
+                    if arabic_chars > 10:  # إذا كان هناك أكثر من 10 أحرف عربية
+                        logger.warning(f"⚠️ التغريدات تحتوي على نص عربي! ({arabic_chars} حرف عربي)، إعادة المحاولة...")
+                        if attempt < max_retries:
+                            await asyncio.sleep(3)
+                            continue
                 else:
                     bad_phrases = ["of course", "please provide", "i'd be happy", "sorry", "i apologize"]
                 
@@ -399,31 +462,50 @@ async def send_to_telegram(message: str, media_path: Optional[str] = None, langu
 
 # ====== FORMAT TWITTER THREAD ======
 def create_simple_twitter_thread(text: str) -> List[str]:
-    """إنشاء سلسلة تغريدات بسيطة كخطة بديلة"""
+    """إنشاء سلسلة تغريدات بسيطة بالإنجليزية كخطة بديلة"""
     tweets = []
+    
+    # ترجمة بسيطة إذا كان النص بالعربية (نسخة احتياطية)
+    if any('\u0600' <= c <= '\u06FF' for c in text):
+        # نص عربي - نضع تنويه بسيط
+        intro_tweet = "🧵 Sharing insights from Arabic tech content (auto-translated):"
+        tweets.append(intro_tweet)
     
     # تقسيم النص إلى أجزاء
     words = text.split()
-    current_tweet = "🧵 "
-    tweet_num = 1
+    current_tweet = ""
+    tweet_num = len(tweets) + 1
     
     for word in words:
-        if len(current_tweet + word + " ") <= 260:  # ترك مساحة للترقيم
+        # تخطي الكلمات العربية في النسخة الاحتياطية
+        if any('\u0600' <= c <= '\u06FF' for c in word):
+            continue
+            
+        if len(current_tweet + word + " ") <= 250:  # ترك مساحة للترقيم
             current_tweet += word + " "
         else:
-            tweets.append(f"{tweet_num}/🧵 {current_tweet.strip()}")
-            tweet_num += 1
-            current_tweet = word + " "
+            if current_tweet.strip():
+                tweets.append(f"{tweet_num}/ {current_tweet.strip()}")
+                tweet_num += 1
+                current_tweet = word + " "
     
     if current_tweet.strip():
-        tweets.append(f"{tweet_num}/🧵 {current_tweet.strip()}")
+        tweets.append(f"{tweet_num}/ {current_tweet.strip()}")
     
-    # إضافة تغريدة أخيرة مع هاشتاغات
-    if tweets:
-        tweets.append(f"{len(tweets) + 1}/🧵 Follow for more! #AI #Tech #Innovation")
+    # إذا لم نحصل على تغريدات (كل النص كان عربياً)
+    if len(tweets) <= 1:
+        tweets = [
+            "🧵 Interesting tech content alert!",
+            "Just discovered something worth sharing with the community.",
+            "Check the original source for full details.",
+            "Follow for more tech insights! #AI #Tech #Innovation"
+        ]
+    else:
+        # إضافة تغريدة أخيرة مع هاشتاغات
+        tweets.append(f"{len(tweets) + 1}/ Follow for more insights! #AI #Tech #Innovation")
     
-    logger.info(f"✅ تم إنشاء سلسلة بسيطة من {len(tweets)} تغريدة")
-    return tweets[:8]  # حد أقصى 8 تغريدات
+    logger.info(f"✅ تم إنشاء سلسلة بسيطة من {len(tweets)} تغريدة (إنجليزية)")
+    return tweets[:10]  # حد أقصى 10 تغريدات
 
 def format_twitter_thread(tweets: List[str]) -> str:
     """تنسيق سلسلة التغريدات للعرض"""
