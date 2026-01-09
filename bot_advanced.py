@@ -4,6 +4,7 @@
 🤖 Telegram & Twitter Content Aggregator Bot
 يجلب المحتوى من قنوات تيليغرام ويعيد نشره بشكل احترافي
 Bilingual Edition: Arabic (Telegram) + English Thread (Twitter/X)
+Multi-API Support: Automatic Failover between multiple OpenAI keys
 """
 
 import os
@@ -38,21 +39,40 @@ USER_SESSION_BASE64 = os.getenv("USER_SESSION_BASE64")
 SOURCE_CHANNELS = os.getenv("SOURCE_CHANNELS", "").split(",")
 SOURCE_CHANNELS = [ch.strip() for ch in SOURCE_CHANNELS if ch.strip()]
 
-# OpenAI
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OpenAI - Multiple API Keys Support
+OPENAI_API_KEYS = []
+primary_key = os.getenv("OPENAI_API_KEY")
+if primary_key:
+    OPENAI_API_KEYS.append(primary_key)
+
+# إضافة مفاتيح إضافية
+for i in range(2, 6):  # يدعم حتى 5 مفاتيح (OPENAI_API_KEY_2 إلى OPENAI_API_KEY_5)
+    key = os.getenv(f"OPENAI_API_KEY_{i}")
+    if key:
+        OPENAI_API_KEYS.append(key)
+
+# تتبع المفاتيح المحظورة مؤقتاً
+BLOCKED_KEYS = set()
 
 # Settings
 POSTS_LIMIT = int(os.getenv("POSTS_LIMIT", "10"))
 MIN_CONTENT_LENGTH = int(os.getenv("MIN_CONTENT_LENGTH", "100"))
 
 # ====== VALIDATION ======
-if not all([TARGET_CHANNEL, OPENAI_API_KEY, API_ID, API_HASH, USER_SESSION_BASE64]):
+if not all([TARGET_CHANNEL, API_ID, API_HASH, USER_SESSION_BASE64]):
     logger.error("❌ بيانات تيليغرام غير مكتملة")
+    sys.exit(1)
+
+if not OPENAI_API_KEYS:
+    logger.error("❌ لا يوجد أي مفتاح OpenAI API")
     sys.exit(1)
 
 if not SOURCE_CHANNELS:
     logger.error("❌ قنوات المصدر غير محددة (SOURCE_CHANNELS)")
     sys.exit(1)
+
+# عرض عدد المفاتيح المتاحة
+logger.info(f"🔑 عدد مفاتيح OpenAI المتاحة: {len(OPENAI_API_KEYS)}")
 
 # ====== DECODE USER SESSION ======
 try:
@@ -65,6 +85,28 @@ except Exception as e:
 
 # ====== TELETHON CLIENT ======
 client = TelegramClient('user_session', int(API_ID), API_HASH)
+
+# ====== API KEY MANAGER ======
+def get_next_available_key() -> Optional[str]:
+    """الحصول على المفتاح التالي المتاح"""
+    available_keys = [key for key in OPENAI_API_KEYS if key not in BLOCKED_KEYS]
+    
+    if not available_keys:
+        logger.error("❌ جميع مفاتيح API محظورة أو مستنفدة!")
+        # إعادة تعيين القائمة المحظورة لإعطاء فرصة أخرى
+        BLOCKED_KEYS.clear()
+        logger.warning("⚠️ إعادة تعيين قائمة المفاتيح المحظورة...")
+        return OPENAI_API_KEYS[0] if OPENAI_API_KEYS else None
+    
+    return available_keys[0]
+
+def mark_key_as_blocked(api_key: str):
+    """وضع علامة على مفتاح كمحظور مؤقتاً"""
+    if api_key:
+        BLOCKED_KEYS.add(api_key)
+        key_preview = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+        logger.warning(f"🚫 تم حظر المفتاح مؤقتاً: {key_preview}")
+        logger.info(f"📊 المفاتيح المتبقية: {len(OPENAI_API_KEYS) - len(BLOCKED_KEYS)}/{len(OPENAI_API_KEYS)}")
 
 # ====== FETCH FROM TELEGRAM ======
 async def fetch_recent_posts(channel_username: str, limit: int = 10) -> List[Message]:
@@ -221,17 +263,27 @@ Remember: Each tweet must be under 280 characters. Think VIRAL. Think ENGAGEMENT
     logger.info(f"✅ تم إنشاء سلسلة من {len(tweets)} تغريدة")
     return tweets
 
-# ====== OPENAI API CALLER ======
+# ====== OPENAI API CALLER WITH MULTI-KEY SUPPORT ======
 async def _call_openai(prompt: str, max_retries: int, content_type: str) -> Optional[str]:
-    """استدعاء OpenAI API مع إعادة المحاولة"""
+    """استدعاء OpenAI API مع دعم مفاتيح متعددة والتبديل التلقائي"""
     
     for attempt in range(1, max_retries + 1):
+        # الحصول على المفتاح التالي المتاح
+        current_key = get_next_available_key()
+        
+        if not current_key:
+            logger.error("❌ لا توجد مفاتيح API متاحة!")
+            return None
+        
+        key_preview = current_key[:8] + "..." + current_key[-4:] if len(current_key) > 12 else "***"
+        logger.info(f"🤖 جاري إنشاء المحتوى ({content_type}) - محاولة {attempt}/{max_retries}")
+        logger.info(f"🔑 استخدام المفتاح: {key_preview}")
+        
         try:
-            logger.info(f"🤖 جاري إنشاء المحتوى ({content_type}) (محاولة {attempt}/{max_retries})...")
             response = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Authorization": f"Bearer {current_key}",
                     "Content-Type": "application/json"
                 },
                 json={
@@ -240,7 +292,7 @@ async def _call_openai(prompt: str, max_retries: int, content_type: str) -> Opti
                     "temperature": 0.8,
                     "max_tokens": 1500
                 },
-                timeout=30
+                timeout=45
             )
             
             if response.status_code == 200:
@@ -255,19 +307,63 @@ async def _call_openai(prompt: str, max_retries: int, content_type: str) -> Opti
                 if any(phrase.lower() in result[:150].lower() for phrase in bad_phrases):
                     logger.warning(f"⚠️ الذكاء الاصطناعي أعاد رد عام ({content_type})، إعادة المحاولة...")
                     if attempt < max_retries:
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(3)
                         continue
                 
                 if len(result) < 100:
                     logger.warning(f"⚠️ المخرج قصير جداً ({content_type})، إعادة المحاولة...")
                     if attempt < max_retries:
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(3)
                         continue
                 
-                logger.info(f"✅ تمت المعالجة بنجاح ({content_type})!")
+                logger.info(f"✅ تمت المعالجة بنجاح ({content_type}) باستخدام {key_preview}!")
                 return result
+            
+            elif response.status_code == 429:
+                # Rate limit exceeded - حظر هذا المفتاح والانتقال للتالي
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('error', {}).get('message', 'Rate limit exceeded')
+                    logger.error(f"🚫 خطأ 429 - المفتاح {key_preview}: {error_msg}")
+                except:
+                    logger.error(f"🚫 خطأ 429 - المفتاح {key_preview} وصل للحد الأقصى")
+                
+                # حظر هذا المفتاح
+                mark_key_as_blocked(current_key)
+                
+                # محاولة مع المفتاح التالي فوراً
+                logger.info("🔄 التبديل إلى المفتاح التالي...")
+                await asyncio.sleep(2)
+                continue
+            
+            elif response.status_code == 401:
+                logger.error(f"🔑 خطأ 401 - المفتاح {key_preview} غير صالح!")
+                mark_key_as_blocked(current_key)
+                logger.info("🔄 التبديل إلى المفتاح التالي...")
+                await asyncio.sleep(1)
+                continue
+            
+            elif response.status_code == 403:
+                logger.error(f"🚫 خطأ 403 - المفتاح {key_preview} محظور!")
+                mark_key_as_blocked(current_key)
+                logger.info("🔄 التبديل إلى المفتاح التالي...")
+                await asyncio.sleep(1)
+                continue
+            
+            elif response.status_code == 500:
+                logger.error(f"⚠️ خطأ 500 - مشكلة في خوادم OpenAI")
+                if attempt < max_retries:
+                    wait_time = 5
+                    logger.info(f"⏳ انتظار {wait_time} ثانية...")
+                    await asyncio.sleep(wait_time)
+                    continue
+            
             else:
                 logger.warning(f"⚠️ خطأ من OpenAI: {response.status_code}")
+                try:
+                    logger.error(f"التفاصيل: {response.text}")
+                except:
+                    pass
                 
         except requests.exceptions.Timeout:
             logger.error(f"⏱️ انتهت مهلة الطلب في المحاولة {attempt}")
@@ -275,11 +371,11 @@ async def _call_openai(prompt: str, max_retries: int, content_type: str) -> Opti
             logger.error(f"❌ خطأ في الذكاء الاصطناعي ({content_type}): {str(e)}")
         
         if attempt < max_retries:
-            wait_time = attempt * 3
+            wait_time = 3
             logger.info(f"⏳ انتظار {wait_time} ثانية قبل إعادة المحاولة...")
             await asyncio.sleep(wait_time)
     
-    logger.error(f"❌ فشلت المعالجة ({content_type}) بعد جميع المحاولات")
+    logger.error(f"❌ فشلت المعالجة ({content_type}) بعد جميع المحاولات مع جميع المفاتيح")
     return None
 
 # ====== TELEGRAM SENDER ======
@@ -302,6 +398,33 @@ async def send_to_telegram(message: str, media_path: Optional[str] = None, langu
         return False
 
 # ====== FORMAT TWITTER THREAD ======
+def create_simple_twitter_thread(text: str) -> List[str]:
+    """إنشاء سلسلة تغريدات بسيطة كخطة بديلة"""
+    tweets = []
+    
+    # تقسيم النص إلى أجزاء
+    words = text.split()
+    current_tweet = "🧵 "
+    tweet_num = 1
+    
+    for word in words:
+        if len(current_tweet + word + " ") <= 260:  # ترك مساحة للترقيم
+            current_tweet += word + " "
+        else:
+            tweets.append(f"{tweet_num}/🧵 {current_tweet.strip()}")
+            tweet_num += 1
+            current_tweet = word + " "
+    
+    if current_tweet.strip():
+        tweets.append(f"{tweet_num}/🧵 {current_tweet.strip()}")
+    
+    # إضافة تغريدة أخيرة مع هاشتاغات
+    if tweets:
+        tweets.append(f"{len(tweets) + 1}/🧵 Follow for more! #AI #Tech #Innovation")
+    
+    logger.info(f"✅ تم إنشاء سلسلة بسيطة من {len(tweets)} تغريدة")
+    return tweets[:8]  # حد أقصى 8 تغريدات
+
 def format_twitter_thread(tweets: List[str]) -> str:
     """تنسيق سلسلة التغريدات للعرض"""
     if not tweets:
@@ -330,11 +453,12 @@ def format_twitter_thread(tweets: List[str]) -> str:
 async def main():
     """البرنامج الرئيسي"""
     logger.info("=" * 70)
-    logger.info("🤖 بوت النشر التلقائي (تيليغرام + تويتر)")
+    logger.info("🤖 بوت النشر التلقائي (تيليغرام + تويتر) - Multi-API")
     logger.info(f"📅 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     logger.info(f"📢 القناة: {TARGET_CHANNEL}")
     logger.info(f"📡 المصادر: {', '.join(SOURCE_CHANNELS)}")
     logger.info(f"🌐 اللغات: العربية (تيليغرام) + الإنجليزية (تويتر)")
+    logger.info(f"🔑 المفاتيح المتاحة: {len(OPENAI_API_KEYS)}")
     logger.info("=" * 70)
     
     try:
@@ -374,21 +498,26 @@ async def main():
         logger.info("=" * 70)
         
         arabic_content = await ai_rewrite_arabic(text)
+        
+        # خطة بديلة: إذا فشل AI، استخدم المحتوى الأصلي مع تحسينات بسيطة
         if not arabic_content:
-            logger.error("❌ فشل في توليد المحتوى العربي")
-            await client.disconnect()
-            return False
+            logger.warning("⚠️ فشل AI، استخدام المحتوى الأصلي مع تحسينات...")
+            arabic_content = f"📢 {text}\n\n#تقنية #تكنولوجيا #ابتكار #Technology #Innovation"
         
         # ==== توليد سلسلة التغريدات بالإنجليزية ====
         logger.info("\n" + "=" * 70)
         logger.info("🐦 توليد سلسلة تغريدات احترافية لتويتر/X...")
         logger.info("=" * 70)
         
+        # تأخير بين الطلبين لتجنب Rate Limiting
+        await asyncio.sleep(5)
+        
         twitter_tweets = await ai_create_twitter_thread(text)
+        
+        # خطة بديلة للتغريدات
         if not twitter_tweets:
-            logger.error("❌ فشل في توليد سلسلة التغريدات")
-            await client.disconnect()
-            return False
+            logger.warning("⚠️ فشل AI للتغريدات، إنشاء نسخة بسيطة...")
+            twitter_tweets = create_simple_twitter_thread(text)
         
         # تنسيق سلسلة التغريدات
         twitter_thread_formatted = format_twitter_thread(twitter_tweets)
@@ -436,12 +565,10 @@ async def main():
             logger.info("✨ نجح! تم النشر على تيليغرام بنجاح!")
             logger.info("🇸🇦 المنشور العربي: ✅")
             logger.info("🐦 سلسلة التغريدات الإنجليزية: ✅")
+            logger.info(f"🔑 المفاتيح المستخدمة: {len(OPENAI_API_KEYS) - len(BLOCKED_KEYS)}/{len(OPENAI_API_KEYS)}")
             logger.info("\n💡 خطوات ما بعد النشر:")
             logger.info("  1. ✅ انسخ المنشور العربي لفيسبوك وإنستغرام")
             logger.info("  2. ✅ انسخ سلسلة التغريدات من تيليغرام وانشرها على تويتر/X")
-            logger.info("     - افتح تويتر واضغط على زر التغريد")
-            logger.info("     - الصق التغريدة الأولى واضغط على زر + لإضافة التالية")
-            logger.info("     - أو: انشر التغريدة الأولى ثم رد عليها بالتغريدات التالية")
         elif success_ar or success_en:
             logger.warning("⚠️ نجح جزئياً:")
             logger.info(f"🇸🇦 المنشور العربي: {'✅' if success_ar else '❌'}")
@@ -464,6 +591,16 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        # عرض معلومات مهمة عند البدء
+        logger.info("=" * 70)
+        logger.info("⚠️ ملاحظات مهمة:")
+        logger.info("1. البوت يدعم حتى 5 مفاتيح OpenAI API")
+        logger.info("2. التبديل التلقائي عند نفاد أحد المفاتيح")
+        logger.info("3. البوت يعمل كل 30 دقيقة = 48 مرة يومياً")
+        logger.info("4. كل تشغيل = طلبين API (عربي + إنجليزي)")
+        logger.info("5. مع 3 مفاتيح: كل مفتاح ≈ 32 طلب/يوم")
+        logger.info("=" * 70)
+        
         result = asyncio.run(main())
         sys.exit(0 if result else 1)
     except KeyboardInterrupt:
