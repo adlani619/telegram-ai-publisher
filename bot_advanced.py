@@ -189,6 +189,12 @@ async def translate_to_arabic(text: str, max_retries: int = 2) -> Optional[str]:
             elif response.status_code == 429:
                 logger.error(f"🚫 خطأ 429 - المفتاح {key_preview}")
                 mark_key_as_blocked(current_key)
+                
+                # تحذير إذا نفذت المفاتيح
+                if len(BLOCKED_KEYS) >= len(OPENAI_API_KEYS):
+                    logger.error("❌ جميع المفاتيح وصلت للحد الأقصى في الترجمة!")
+                    return None
+                
                 await asyncio.sleep(2)
                 continue
                 
@@ -700,6 +706,20 @@ async def main():
         
         if not arabic_post or len(arabic_post) < 100:
             logger.warning("⚠️ فشل AI أو المحتوى قصير، استخدام النص المعالج مباشرة")
+            
+            # التحقق من سبب الفشل
+            if len(BLOCKED_KEYS) >= len(OPENAI_API_KEYS):
+                logger.error("")
+                logger.error("=" * 70)
+                logger.error("⛔ تنبيه: جميع مفاتيح OpenAI وصلت للحد الأقصى!")
+                logger.error("=" * 70)
+                logger.error("")
+                logger.error("سيتم استخدام المحتوى الأصلي بدون معالجة AI.")
+                logger.error("للحصول على أفضل النتائج:")
+                logger.error("  • أضف مفاتيح OpenAI إضافية (حتى 5 مفاتيح)")
+                logger.error("  • انتظر 60 دقيقة قبل التشغيل مرة أخرى")
+                logger.error("")
+            
             # استخدام النص العربي (المترجم أو الأصلي) مع تحسين بسيط
             arabic_post = f"""📢 {arabic_text}
 
@@ -729,6 +749,22 @@ async def main():
         
         logger.info(f"✅ المنشور العربي جاهز ({len(arabic_final)} حرف)")
         logger.info(f"📝 معاينة:\n{arabic_final[:300]}...\n")
+        
+        # 4️⃣ توليد سلسلة التغريدات الإنجليزية
+        logger.info("\n" + "=" * 70)
+        logger.info("🐦 الخطوة 4: توليد سلسلة التغريدات (تويتر/X)")
+        logger.info("=" * 70)
+        
+        await asyncio.sleep(5)  # تأخير بين الطلبين
+        
+        # تعريف المتغير أولاً
+        twitter_tweets = None
+        
+        try:
+            twitter_tweets = await generate_english_twitter_thread(original_text)
+        except Exception as e:
+            logger.error(f"❌ خطأ في توليد التغريدات: {str(e)}")
+            twitter_tweets = None
         
         # 4️⃣ توليد سلسلة التغريدات الإنجليزية
         logger.info("\n" + "=" * 70)
