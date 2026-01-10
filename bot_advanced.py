@@ -619,13 +619,49 @@ async def send_to_telegram(message: str, media_path: Optional[str] = None, label
     try:
         logger.info(f"📤 جاري النشر على تيليغرام ({label})...")
         
+        # حدود تيليغرام
+        MAX_CAPTION_WITH_MEDIA = 1024
+        MAX_MESSAGE_LENGTH = 4096
+        
         if media_path and os.path.exists(media_path):
-            await client.send_file(TARGET_CHANNEL, media_path, caption=message)
+            # مع وسائط - الحد 1024 حرف
+            if len(message) > MAX_CAPTION_WITH_MEDIA:
+                logger.warning(f"⚠️ النص طويل للوسائط ({len(message)} حرف)")
+                logger.info("   إرسال النص كرسالة منفصلة + الوسائط")
+                
+                # إرسال الوسائط بدون نص
+                await client.send_file(TARGET_CHANNEL, media_path)
+                await asyncio.sleep(2)
+                
+                # إرسال النص كرسالة منفصلة
+                if len(message) > MAX_MESSAGE_LENGTH:
+                    # تقسيم النص
+                    parts = [message[i:i+MAX_MESSAGE_LENGTH-50] for i in range(0, len(message), MAX_MESSAGE_LENGTH-50)]
+                    for i, part in enumerate(parts, 1):
+                        await client.send_message(TARGET_CHANNEL, f"[{i}/{len(parts)}]\n{part}")
+                        if i < len(parts):
+                            await asyncio.sleep(1)
+                else:
+                    await client.send_message(TARGET_CHANNEL, message)
+            else:
+                # النص ضمن الحد - إرسال عادي
+                await client.send_file(TARGET_CHANNEL, media_path, caption=message)
         else:
-            await client.send_message(TARGET_CHANNEL, message)
+            # بدون وسائط - الحد 4096 حرف
+            if len(message) > MAX_MESSAGE_LENGTH:
+                logger.warning(f"⚠️ النص طويل ({len(message)} حرف)، تقسيم...")
+                # تقسيم النص
+                parts = [message[i:i+MAX_MESSAGE_LENGTH-50] for i in range(0, len(message), MAX_MESSAGE_LENGTH-50)]
+                for i, part in enumerate(parts, 1):
+                    await client.send_message(TARGET_CHANNEL, f"[{i}/{len(parts)}]\n{part}")
+                    if i < len(parts):
+                        await asyncio.sleep(1)
+            else:
+                await client.send_message(TARGET_CHANNEL, message)
         
         logger.info(f"✅ تم النشر ({label}) بنجاح!")
         return True
+        
     except Exception as e:
         logger.error(f"❌ فشل النشر ({label}): {str(e)}")
         return False
@@ -731,20 +767,56 @@ async def main():
         arabic_chars_in_post = sum(1 for c in arabic_post if '\u0600' <= c <= '\u06FF')
         if arabic_chars_in_post < 50:
             logger.error("❌ المنشور العربي لا يحتوي على عربي كافٍ!")
-            # خطة طوارئ: استخدام الترجمة أو النص الأصلي
-            if arabic_text and any('\u0600' <= c <= '\u06FF' for c in arabic_text):
-                arabic_post = f"""📢 {arabic_text}
-
-💡 تابعنا للمزيد!
-
-#تقنية #AI #Tech"""
-            else:
-                logger.error("❌ لا يوجد محتوى عربي!")
+            logger.error(f"   النص الحالي: {arabic_post[:200]}...")
+            
+            # التحقق من سبب الفشل
+            if len(BLOCKED_KEYS) >= len(OPENAI_API_KEYS):
+                logger.error("")
+                logger.error("⛔ السبب: جميع مفاتيح OpenAI وصلت للحد الأقصى!")
+                logger.error("   لا يمكن ترجمة المحتوى للعربية.")
+                logger.error("")
+                logger.error("💡 لحل هذه المشكلة:")
+                logger.error("  1. أضف مفاتيح OpenAI إضافية")
+                logger.error("  2. انتظر 60 دقيقة وأعد المحاولة")
+                logger.error("")
+                logger.error("❌ إيقاف البرنامج - لا يوجد محتوى عربي للنشر")
                 await client.disconnect()
                 return False
         
+        # التحقق من طول المنشور العربي
+        # تيليغرام: 1024 حرف مع وسائط، 4096 بدون
+        max_caption_length = 1000 if media_path else 4000
+        
+        if len(arabic_post) > max_caption_length:
+            logger.warning(f"⚠️ المنشور العربي طويل جداً ({len(arabic_post)} حرف)")
+            logger.info(f"   الحد الأقصى: {max_caption_length} حرف")
+            logger.info("   جاري الاقتصاص...")
+            
+            # اقتصاص ذكي - قطع عند آخر جملة كاملة
+            truncated = arabic_post[:max_caption_length-50]  # ترك مساحة
+            
+            # محاولة القطع عند آخر نقطة أو سطر جديد
+            last_period = truncated.rfind('.')
+            last_newline = truncated.rfind('\n')
+            cut_point = max(last_period, last_newline)
+            
+            if cut_point > max_caption_length - 200:  # إذا كان القطع قريب من النهاية
+                arabic_post = truncated[:cut_point] + "\n\n... [تم الاقتصاص]\n\n"
+            else:
+                arabic_post = truncated + "...\n\n"
+            
+            # إضافة هاشتاغات ووقت
+            arabic_post += "#تقنية #Tech #AI"
+        
         # إضافة التوقيت
         timestamp = f"\n\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+        
+        # التحقق مرة أخرى من الطول النهائي
+        if len(arabic_post + timestamp) > max_caption_length:
+            # اقتصاص أكثر
+            available_space = max_caption_length - len(timestamp) - 20
+            arabic_post = arabic_post[:available_space] + "..."
+        
         arabic_final = arabic_post + timestamp
         
         logger.info(f"✅ المنشور العربي جاهز ({len(arabic_final)} حرف)")
@@ -909,6 +981,17 @@ if __name__ == "__main__":
         logger.info(f"  • القنوات المصدر: {len(SOURCE_CHANNELS)}")
         logger.info(f"  • الحد الأدنى للمحتوى: {MIN_CONTENT_LENGTH} حرف")
         logger.info("")
+        
+        # تحذير إذا كان هناك مفتاح واحد فقط
+        if len(OPENAI_API_KEYS) < 2:
+            logger.warning("⚠️  تحذير: يوجد مفتاح OpenAI واحد فقط!")
+            logger.warning("   للحصول على أفضل النتائج:")
+            logger.warning("   • أضف 2-5 مفاتيح إضافية:")
+            logger.warning("     OPENAI_API_KEY_2, OPENAI_API_KEY_3, ...")
+            logger.warning("   • كل تشغيل يستهلك 3-5 طلبات API")
+            logger.warning("   • مفتاح واحد قد يصل للحد بسرعة!")
+            logger.info("")
+        
         logger.info("🚀 بدء التشغيل...")
         logger.info("=" * 70)
         logger.info("")
